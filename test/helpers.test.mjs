@@ -9,7 +9,7 @@ import {
   isPreset, isSensor, sensorIcon, allOnTargets,
   wheelSteps, pinchZoom, clampPct, glowStrength, glowMix, COLOR_KEYS,
   roomControl, roomSwitchCall, roomSliderCall, roomListItems,
-  viewHeight,
+  viewHeight, cardBackground,
 } from '../dist/gh-dash.js';
 
 const S = (entity_id, state, attributes = {}) => ({ entity_id, state, attributes });
@@ -551,4 +551,12 @@ test('viewHeight: the plan never gets taller than the space left on screen', () 
   assert.equal(viewHeight(700, 800), 800 - 400 - 56);       // card far down: at most half the screen above it
   assert.equal(viewHeight(0, 800, true), 800 - 16);         // full screen
   assert.equal(viewHeight(100, 200), 160);                  // tiny window: minimum height
+});
+
+test('cardBackground: own colours for light and dark mode, empty = default look', () => {
+  assert.deepEqual(cardBackground({}), { light: '', dark: '' });
+  assert.deepEqual(cardBackground({ background: '#ffeedd' }), { light: '#ffeedd', dark: '' });
+  assert.deepEqual(cardBackground({ background: '  ', background_dark: '#102030' }), { light: '', dark: '#102030' });
+  assert.deepEqual(cardBackground(null), { light: '', dark: '' });
+  assert.equal(normalizeConfig({ image: 'x', background: '#abcdef' }).background, '#abcdef');
 });

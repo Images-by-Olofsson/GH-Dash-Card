@@ -108,8 +108,9 @@ selected item on top, the device list below.
 - Item options: label, style (`label` box, `hotspot` invisible area over a label in the image,
   `text`), action on tap, sliders for lights, colours and glow brightness, size and rotation.
   Each colour has a **Reset** button; **Reset colours** clears them all.
-- **Appearance** in the left menu: glow brightness for all buttons and the glow colour (Auto = the
-  light's own colour).
+- **Appearance** in the left menu: glow brightness for all buttons, the glow colour (Auto = the
+  light's own colour), the **card background** colour for light and dark mode, and an option to let
+  that colour show through the white of the floor-plan image.
 
 ## Configuration
 
@@ -121,6 +122,9 @@ theme: light                # light | dark | auto (follow Home Assistant), defau
 zoom: 1                     # start zoom 0.5-3, used when fit is off
 glow_color: auto            # or any CSS colour
 glow_opacity: 100           # glow brightness 0-100 % for all buttons (default 100)
+background: '#e8f0e0'      # card background in light mode (default: Home Assistant's card colour)
+background_dark: '#1b2a3a' # card background in dark mode (default #11151b)
+tint_plan: true            # the background colour shows through the plan image's white (default false)
 show_controls: true         # buttons on the card (default true)
 dim_after: 120              # wall panel: dim after this many seconds without a touch (0 = never)
 home_presets: true          # "Turn everything off" and "All lights on" with the scenes (default true)
