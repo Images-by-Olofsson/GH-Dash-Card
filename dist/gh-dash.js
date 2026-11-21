@@ -7,7 +7,7 @@
  *
  * Card type: custom:gh-dash-card
  */
-const VERSION = '0.15.1';
+const VERSION = '0.16.0';
 
 // ---------------------------------------------------------------- helpers --
 
@@ -137,6 +137,12 @@ export function glowStrength(button, config) {
 export function glowMix(color, pct) {
   const p = clampPct(pct);
   return p >= 100 ? color : `color-mix(in srgb, ${color} ${p}%, transparent)`;
+}
+
+/** The card's own background colours: { light, dark } (empty = the default look). */
+export function cardBackground(config) {
+  const pick = (v) => (typeof v === 'string' && v.trim() ? v.trim() : '');
+  return { light: pick(config && config.background), dark: pick(config && config.background_dark) };
 }
 
 /** The colours an item can have, in the order the editor shows them. */
@@ -661,6 +667,8 @@ const TEXTS = {
     tap_toggle: 'Turn on/off', 'tap_more-info': 'Show details', tap_none: 'Nothing', select_hint: 'Click a box on the plan to edit it.',
     rc_brightness: 'Brightness', rc_percentage: 'Speed', rc_volume: 'Volume', rc_position: 'Position',
     room_close: 'Close', room_empty: 'No devices in this room yet.',
+    card_bg: 'Card background (light mode)', card_bg_dark: 'Card background (dark mode)',
+    tint_plan: 'Let the background colour show through the white of the floor plan',
     appearance: 'Appearance', glow_op: 'Glow brightness', glow_op_all: 'Glow brightness (all buttons)',
     glow_col: 'Glow colour', auto_col: 'Auto (the light\'s own colour)', colors: 'Colours', c_text: 'Text',
     c_bg: 'Background', c_border: 'Border', c_on: 'Glow when on', c_on_bg: 'Background when on',
@@ -714,6 +722,8 @@ const TEXTS = {
     tap_toggle: 'Slå på/av', 'tap_more-info': 'Visa detaljer', tap_none: 'Ingenting', select_hint: 'Klicka på en ruta på planen för att ändra den.',
     rc_brightness: 'Ljusstyrka', rc_percentage: 'Hastighet', rc_volume: 'Volym', rc_position: 'Läge',
     room_close: 'Stäng', room_empty: 'Inga enheter i rummet än.',
+    card_bg: 'Kortets bakgrund (ljust läge)', card_bg_dark: 'Kortets bakgrund (mörkt läge)',
+    tint_plan: 'Låt bakgrundsfärgen synas genom planritningens vita yta',
     appearance: 'Utseende', glow_op: 'Glödstyrka', glow_op_all: 'Glödstyrka (alla knappar)',
     glow_col: 'Glödfärg', auto_col: 'Auto (lampans egen färg)', colors: 'Färger', c_text: 'Text',
     c_bg: 'Bakgrund', c_border: 'Kant', c_on: 'Glöd när på', c_on_bg: 'Bakgrund när på',
@@ -995,6 +1005,12 @@ const CARD_CSS = `
   .btn.static.style-hotspot { display: none; }
   ha-card:fullscreen { overflow: auto; border-radius: 0; background: var(--primary-background-color, #fafafa); }
   ha-card.dark:fullscreen { background: #11151b; }
+  /* own background colours (card settings: background / background_dark) */
+  ha-card.has-bg:not(.dark), ha-card.has-bg:not(.dark):fullscreen { background: var(--gh-bg); }
+  ha-card.dark.has-bg-dark, ha-card.dark.has-bg-dark:fullscreen { background: var(--gh-bg-dark); }
+  /* tint_plan: the background colour shows through the plan image's white (dark mode: its dark) parts */
+  ha-card.tint .plan img { mix-blend-mode: darken; }
+  ha-card.tint.dark .plan img { mix-blend-mode: lighten; }
   .btn.style-hotspot:hover, .btn:focus-visible { border-color: color-mix(in srgb, var(--primary-color, #03a9f4) 55%, transparent); outline: none; }
   .btn.on { box-shadow: 0 0 0 2px var(--glow), 0 0 calc(14px * var(--gs, 1)) calc(5px * var(--gs, 1)) var(--glow);
             animation: gh-pulse 2.4s ease-in-out infinite; }
@@ -1192,6 +1208,10 @@ class GhDashCard extends Base {
     root.appendChild(style);
     const card = document.createElement('ha-card');
     this._card = card;
+    const bg = cardBackground(this._config);
+    if (bg.light) { card.classList.add('has-bg'); card.style.setProperty('--gh-bg', bg.light); }
+    if (bg.dark) { card.classList.add('has-bg-dark'); card.style.setProperty('--gh-bg-dark', bg.dark); }
+    if (this._config.tint_plan === true) card.classList.add('tint');
     root.appendChild(card);
     if (!this._config.image) {
       const hint = document.createElement('div');
@@ -3116,6 +3136,13 @@ class GhDashCardEditor extends Base {
     const gc = this._config.glow_color && this._config.glow_color !== 'auto' ? this._config.glow_color : '';
     box.appendChild(this._colorRow(L('glow_col'), gc, '#ffb300', L('auto_col'), L,
       (v) => { this._config.glow_color = v || 'auto'; this._fire(); this._render(); }));
+    const bg = cardBackground(this._config);
+    const setBg = (k) => (v) => { if (v) this._config[k] = v; else delete this._config[k]; this._fire(); this._render(); };
+    box.appendChild(this._colorRow(L('card_bg'), bg.light, '#ffffff', L('not_set'), L, setBg('background')));
+    box.appendChild(this._colorRow(L('card_bg_dark'), bg.dark, '#11151b', L('not_set'), L, setBg('background_dark')));
+    box.appendChild(this._check(L('tint_plan'), this._config.tint_plan === true, (v) => {
+      if (v) this._config.tint_plan = true; else delete this._config.tint_plan; this._fire(); this._render();
+    }));
     return box;
   }
 
