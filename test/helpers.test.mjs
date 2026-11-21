@@ -5,7 +5,33 @@ import {
   clampZoom, dropRect, resolveTheme, groupOf, fitZoom, replaceCard,
   normRotate, lightCaps, brightnessPct, hueOf, lightCall, angleTo, roomOf, roomMembers,
   roomParts, sharedEdge, mergeRooms, resizeEdge, placedAt, fitFont, haSummary, fmtBytes, starterConfig,
+  scanDevices,
 } from '../dist/gh-dash.js';
+
+test('scanDevices groups the devices Home Assistant has, with their area, skipping hidden ones', () => {
+  const st = (id, name) => [id, { entity_id: id, state: 'off', attributes: { friendly_name: name } }];
+  const states = Object.fromEntries([
+    st('light.b', 'Bordslampa'), st('light.a', 'Arbetslampa'), st('switch.plug', 'Uttag'),
+    st('media_player.tv', 'TV'), st('fan.f', 'Fläkt'), st('sensor.temp', 'Temp'), st('input_boolean.hidden', 'Dold'),
+  ]);
+  const entities = {
+    'light.a': { area_id: 'kok' },
+    'light.b': { device_id: 'dev1' },
+    'input_boolean.hidden': { hidden: true },
+  };
+  const devices = { dev1: { area_id: 'vardagsrum' } };
+  const areas = { kok: { name: 'Kök' }, vardagsrum: { name: 'Vardagsrum' } };
+  const r = scanDevices(states, entities, devices, areas);
+  assert.equal(r.total, 5);                                   // sensor and hidden helper are not devices to place
+  assert.deepEqual(r.groups.lights, [
+    { id: 'light.a', name: 'Arbetslampa', area: 'Kök' },      // area on the entity
+    { id: 'light.b', name: 'Bordslampa', area: 'Vardagsrum' }, // area via its device
+  ]);
+  assert.deepEqual(r.groups.switches.map((d) => d.id), ['switch.plug']);
+  assert.deepEqual(r.groups.media.map((d) => d.id), ['media_player.tv']);
+  assert.deepEqual(r.groups.other.map((d) => d.id), ['fan.f']);
+  assert.equal(scanDevices({}, {}, {}, {}).total, 0);
+});
 
 test('starterConfig: plan + rooms + Console info, and no devices at all', () => {
   const c = starterConfig('/local/community/GH-Dash/plan.png');
