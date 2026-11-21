@@ -23,7 +23,7 @@ The example floor plan `dist/plan.png` is installed together with the card.
 ### Marketplace (Home Assistant 2026.11 or newer)
 
 1. Open the **Marketplace** and choose **Add from link**.
-2. Paste `https://github.com/Images-by-Olofsson/GH-Dash` and select **Add**
+2. Paste `https://github.com/Images-by-Olofsson/GH-Dash-Card` and select **Add**
    (the first time, you are asked to connect a GitHub account). Download it.
 3. **Restart Home Assistant once** if the `www` folder did not exist before - until then the
    card file cannot be loaded. The Marketplace adds the card to the dashboard resources itself.
