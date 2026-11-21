@@ -1,0 +1,62 @@
+# GH-Dash starting configuration: the example plan, its rooms and the Console/Terminal
+# info button. NO devices: add your own lamps/TV with the pencil (edit) button on the card.
+# This is what you get when you add the "GH-Dash floor plan" card in Home Assistant.
+# image: the plan installed with the card (Marketplace) - change it if your path differs.
+type: custom:gh-dash-card
+image: /local/community/GH-Dash/plan.png
+fit: true
+buttons:
+  - label: 'Console/Terminal'
+    style: 'label'
+    tap_action: 'ha-info'
+    rotate: 90
+    x: 54
+    y: 53
+    w: 8
+    h: 3
+rooms:
+  - name: 'Balkong'
+    x: 52.7
+    y: 18
+    w: 21.7
+    h: 5.7
+  - name: 'Sovrum 3'
+    x: 46.1
+    y: 24.5
+    w: 22.8
+    h: 18.8
+  - name: 'Kök'
+    x: 70.4
+    y: 27.6
+    w: 21.3
+    h: 25.3
+  - name: 'Hall'
+    parts:
+      - { x: 46.1, y: 44.8, w: 26.9, h: 9.9 }
+      - { x: 46.1, y: 54.7, w: 14.4, h: 13 }
+      - { x: 29.5, y: 62.2, w: 16.6, h: 5.5 }
+  - name: 'Bad'
+    x: 21
+    y: 53.6
+    w: 15.8
+    h: 8.6
+  - name: 'WC'
+    x: 38.3
+    y: 54.7
+    w: 7
+    h: 7.6
+  - name: 'Sovrum 1'
+    x: 9.2
+    y: 64.1
+    w: 20.3
+    h: 18.2
+  - name: 'Sovrum 2'
+    x: 35.4
+    y: 69.3
+    w: 27.3
+    h: 13
+  - name: 'Vardagsrum'
+    x: 64.1
+    y: 55.2
+    w: 26.2
+    h: 27.1

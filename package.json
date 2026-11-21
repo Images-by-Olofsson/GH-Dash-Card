@@ -1,0 +1,10 @@
+{
+  "name": "gh-dash",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Home Assistant floor-plan card: labels as on/off buttons that glow when on",
+  "type": "module",
+  "scripts": {
+    "test": "node --test \"test/*.test.mjs\""
+  }
+}
