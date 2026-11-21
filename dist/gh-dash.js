@@ -1,13 +1,13 @@
 /*
  * GH-Dash floor-plan card for Home Assistant.
  * A floor-plan image with buttons on top: tap = toggle, long-press = more info,
- * a glow shows what is on. Zoom (+/-, Ctrl+wheel, drag to pan) and a light/dark
+ * a glow shows what is on. Zoom (+/-, mouse wheel, drag to pan) and a light/dark
  * switch on the card. In the card editor, devices are dragged from a list onto
  * the plan and moved/resized there. One file, no dependencies.
  *
  * Card type: custom:gh-dash-card
  */
-const VERSION = '0.13.0';
+const VERSION = '0.14.0';
 
 // ---------------------------------------------------------------- helpers --
 
@@ -100,6 +100,62 @@ export function pxToPct(dx, dy, boxWidth, boxHeight) {
     dx: boxWidth > 0 ? (dx / boxWidth) * 100 : 0,
     dy: boxHeight > 0 ? (dy / boxHeight) * 100 : 0,
   };
+}
+
+/** Wheel distance (in pixels) that makes one zoom step. One mouse-wheel notch is about 100 (Firefox: 3 lines = 99). */
+export const WHEEL_NOTCH = 90;
+
+/**
+ * Turn wheel movement into zoom steps. `rest` is carried over between events so a touchpad's
+ * many small events add up instead of each one zooming a full step.
+ * Returns { steps, rest }: steps > 0 = zoom in, < 0 = zoom out (at most 2 per event).
+ */
+export function wheelSteps(rest, deltaY, deltaMode = 0) {
+  const unit = deltaMode === 1 ? 33 : deltaMode === 2 ? 400 : 1; // lines / pages -> pixels
+  const acc = num(rest, 0) + num(deltaY, 0) * unit;
+  const n = Math.trunc(acc / WHEEL_NOTCH);
+  return { steps: clamp(-n, -2, 2) || 0, rest: acc - n * WHEEL_NOTCH };
+}
+
+/** A percent 0..100 (whole number); `fallback` when empty or not a number. */
+export function clampPct(v, fallback = 100) {
+  if (v === undefined || v === null || v === '') return fallback;
+  const n = Number(v);
+  return Number.isFinite(n) ? clamp(Math.round(n), 0, 100) : fallback;
+}
+
+/** How strong a button's glow is (0..100 %): the item's own setting, else the card's, else 100. */
+export function glowStrength(button, config) {
+  const own = button ? button.glow_opacity : undefined;
+  if (own !== undefined && own !== null && own !== '') return clampPct(own);
+  return clampPct(config ? config.glow_opacity : undefined);
+}
+
+/** A colour at `pct` % strength (mixed with transparent). 100 % = the colour itself. */
+export function glowMix(color, pct) {
+  const p = clampPct(pct);
+  return p >= 100 ? color : `color-mix(in srgb, ${color} ${p}%, transparent)`;
+}
+
+/** The colours an item can have, in the order the editor shows them. */
+export const COLOR_KEYS = ['color', 'bg_color', 'border_color', 'on_color', 'on_bg_color'];
+
+/** Set (or clear) a CSS variable for light and dark mode at once. */
+function setVar2(el, name, value) {
+  if (value) { el.style.setProperty(`--${name}`, value); el.style.setProperty(`--${name}-dark`, value); }
+  else { el.style.removeProperty(`--${name}`); el.style.removeProperty(`--${name}-dark`); }
+}
+
+/** An item's own background and border colours; `on` uses the "when on" background if it has one. */
+function paintBox(el, b, on) {
+  setVar2(el, 'bg', (on && b.on_bg_color) || b.bg_color || '');
+  setVar2(el, 'bd', b.border_color || '');
+}
+
+/** Two-finger pinch: the zoom for fingers now `dist` apart that started `startDist` apart at `startZoom`. */
+export function pinchZoom(startZoom, startDist, dist) {
+  if (!(startDist > 0) || !(dist > 0)) return clampZoom(startZoom);
+  return clampZoom(num(startZoom, 1) * (dist / startDist));
 }
 
 /** Zoom factor limited to 0.5..3 in 0.25 steps. */
@@ -514,6 +570,7 @@ export function normalizeConfig(cfg) {
     ...cfg, buttons, rooms, glow_color: cfg.glow_color || 'auto', theme,
     zoom: clampZoom(cfg.zoom), show_controls: cfg.show_controls !== false, fit: cfg.fit !== false,
     dim_after: Math.max(0, num(cfg.dim_after, 120)), home_presets: cfg.home_presets !== false,
+    glow_opacity: clampPct(cfg.glow_opacity),
   };
 }
 
@@ -525,6 +582,10 @@ const TEXTS = {
     no_image: 'Set a floor-plan image in the card settings.', drag_hint: 'Drag a device from the list onto the plan. Click a box to edit it (click again to close). Drag to move, corner to resize, round handle to rotate. Mouse wheel zooms, drag an empty spot to move the plan.',
     st_hotspot: 'Hotspot (label is in the image)', st_label: 'Label (card draws the box)',
     tap_toggle: 'Turn on/off', 'tap_more-info': 'Show details', tap_none: 'Nothing', select_hint: 'Click a box on the plan to edit it.',
+    appearance: 'Appearance', glow_op: 'Glow brightness', glow_op_all: 'Glow brightness (all buttons)',
+    glow_col: 'Glow colour', auto_col: 'Auto (the light\'s own colour)', colors: 'Colours', c_text: 'Text',
+    c_bg: 'Background', c_border: 'Border', c_on: 'Glow when on', c_on_bg: 'Background when on',
+    c_reset: 'Reset colours', reset: 'Reset', same_card: 'Same as the card', not_set: 'Default',
     zoom_in: 'Zoom in', zoom_out: 'Zoom out', zoom_reset: 'Reset zoom', to_dark: 'Dark mode', to_light: 'Light mode',
     theme: 'Background', th_light: 'Light', th_dark: 'Dark', th_auto: 'Follow Home Assistant', zoom_default: 'Start zoom (0.5-3)',
     controls: 'Show zoom and light/dark buttons on the card', palette: 'Devices - drag onto the plan', search: 'Search…',
@@ -572,6 +633,10 @@ const TEXTS = {
     no_image: 'Ange en bild på planlösningen i kortets inställningar.', drag_hint: 'Dra en enhet från listan till planen. Klicka på en ruta för att ändra den (klicka igen för att stänga). Dra för att flytta, hörnet för att ändra storlek, runda handtaget för att rotera. Mushjulet zoomar, dra i en tom yta för att flytta planen.',
     st_hotspot: 'Klickyta (etiketten finns i bilden)', st_label: 'Etikett (kortet ritar rutan)',
     tap_toggle: 'Slå på/av', 'tap_more-info': 'Visa detaljer', tap_none: 'Ingenting', select_hint: 'Klicka på en ruta på planen för att ändra den.',
+    appearance: 'Utseende', glow_op: 'Glödstyrka', glow_op_all: 'Glödstyrka (alla knappar)',
+    glow_col: 'Glödfärg', auto_col: 'Auto (lampans egen färg)', colors: 'Färger', c_text: 'Text',
+    c_bg: 'Bakgrund', c_border: 'Kant', c_on: 'Glöd när på', c_on_bg: 'Bakgrund när på',
+    c_reset: 'Återställ färger', reset: 'Återställ', same_card: 'Som kortet', not_set: 'Standard',
     zoom_in: 'Zooma in', zoom_out: 'Zooma ut', zoom_reset: 'Återställ zoom', to_dark: 'Mörkt läge', to_light: 'Ljust läge',
     theme: 'Bakgrund', th_light: 'Ljus', th_dark: 'Mörk', th_auto: 'Följ Home Assistant', zoom_default: 'Startzoom (0,5–3)',
     controls: 'Visa zoom- och ljus/mörk-knappar på kortet', palette: 'Enheter – dra in på planen', search: 'Sök…',
@@ -786,7 +851,7 @@ const CARD_CSS = `
   .btn.circ .txt { display: none; }
   .btn.circ.alert { background: var(--error-color, #e53935); color: #fff; border-color: var(--error-color, #e53935); }
   ha-card.dark { background: #11151b; color: #e6e9ef; }
-  .vp { position: relative; overflow: auto; overscroll-behavior: contain; scrollbar-width: thin; }
+  .vp { position: relative; overflow: auto; overscroll-behavior: contain; scrollbar-width: thin; touch-action: pan-x pan-y; }
   .vp.pannable { cursor: grab; }
   .vp.panning { cursor: grabbing; }
   .plan { position: relative; container-type: inline-size; line-height: 0; user-select: none; -webkit-user-select: none;
@@ -801,17 +866,18 @@ const CARD_CSS = `
          font: 500 max(7px, calc(var(--fs, 0.95) * 1cqw))/1.15 var(--paper-font-body1_-_font-family, system-ui, sans-serif);
          border-radius: 6px; transition: box-shadow .3s, background-color .3s; -webkit-tap-highlight-color: transparent;
          transform: rotate(var(--rot, 0deg)); }
-  .btn.style-label { background: #fff; color: #111; border: 1px solid #333; }
-  ha-card.dark .btn.style-label { background: #1d232c; color: #e6e9ef; border-color: #8a94a6; }
-  .btn.style-hotspot { background: transparent; border: 2px solid transparent; color: transparent; }
-  .btn.style-text { background: transparent; border: 2px solid transparent; color: var(--tc, #1d2330); font-weight: 600; }
+  .btn.style-label { background: var(--bg, #fff); color: var(--tc, #111); border: 1px solid var(--bd, #333); }
+  ha-card.dark .btn.style-label { background: var(--bg-dark, #1d232c); color: var(--tc-dark, #e6e9ef); border-color: var(--bd-dark, #8a94a6); }
+  .btn.style-hotspot { background: var(--bg, transparent); border: 2px solid var(--bd, transparent); color: transparent; }
+  .btn.style-text { background: var(--bg, transparent); border: 2px solid var(--bd, transparent); color: var(--tc, #1d2330); font-weight: 600; }
   ha-card.dark .btn.style-text { color: var(--tc-dark, #e6e9ef); }
   .btn.static { cursor: default; }
   .btn.static.style-hotspot { display: none; }
   ha-card:fullscreen { overflow: auto; border-radius: 0; background: var(--primary-background-color, #fafafa); }
   ha-card.dark:fullscreen { background: #11151b; }
   .btn.style-hotspot:hover, .btn:focus-visible { border-color: color-mix(in srgb, var(--primary-color, #03a9f4) 55%, transparent); outline: none; }
-  .btn.on { box-shadow: 0 0 0 2px var(--glow), 0 0 14px 5px var(--glow); animation: gh-pulse 2.4s ease-in-out infinite; }
+  .btn.on { box-shadow: 0 0 0 2px var(--glow), 0 0 calc(14px * var(--gs, 1)) calc(5px * var(--gs, 1)) var(--glow);
+            animation: gh-pulse 2.4s ease-in-out infinite; }
   .btn.on.style-hotspot { background: color-mix(in srgb, var(--glow) 16%, transparent); }
   .btn.unavailable { filter: grayscale(1); opacity: .55; cursor: not-allowed; }
   .btn .txt { overflow: hidden; overflow-wrap: anywhere; }
@@ -819,8 +885,8 @@ const CARD_CSS = `
   .ic { display: inline-block; vertical-align: -0.2em; flex: none; }
   .btn .warn { display: none; position: absolute; top: -0.9em; right: -0.6em; font-size: 1.1em; color: var(--warning-color, #ffa600); }
   .btn.unavailable .warn { display: block; }
-  @keyframes gh-pulse { 0%, 100% { box-shadow: 0 0 0 2px var(--glow), 0 0 10px 3px var(--glow); }
-                        50% { box-shadow: 0 0 0 2px var(--glow), 0 0 20px 8px var(--glow); } }
+  @keyframes gh-pulse { 0%, 100% { box-shadow: 0 0 0 2px var(--glow), 0 0 calc(10px * var(--gs, 1)) calc(3px * var(--gs, 1)) var(--glow); }
+                        50% { box-shadow: 0 0 0 2px var(--glow), 0 0 calc(20px * var(--gs, 1)) calc(8px * var(--gs, 1)) var(--glow); } }
   @media (prefers-reduced-motion: reduce) { .btn.on { animation: none; } }
   .bar { position: absolute; top: 14px; right: 14px; z-index: 5; display: flex; align-items: center; gap: 2px;
          padding: 3px; border-radius: 10px; background: rgba(255, 255, 255, .88); color: #1d2330;
@@ -1073,6 +1139,7 @@ class GhDashCard extends Base {
       }
       if (b.size) el.style.setProperty('--fs', String(b.size));
       if (b.color) { el.style.setProperty('--tc', b.color); el.style.setProperty('--tc-dark', b.color); }
+      if (!isSensor(b.entity)) paintBox(el, b, false);
       const txt = document.createElement('span');
       txt.className = 'txt';
       el.appendChild(txt);
@@ -1353,7 +1420,8 @@ class GhDashCard extends Base {
     });
   }
 
-  _applyZoom(z, remember) {
+  /** Zoom to `z`. With a pointer position the point under the pointer stays put, else the middle of the view. */
+  _applyZoom(z, remember, clientX, clientY) {
     const vp = this._vp;
     if (!vp || !this._plan) return;
     if (remember) {
@@ -1361,14 +1429,18 @@ class GhDashCard extends Base {
       store.set(`${this._key}:fit`, '0');
     }
     const next = clampZoom(z);
-    // keep the point in the middle of the view in the middle
-    const cx = vp.scrollWidth ? (vp.scrollLeft + vp.clientWidth / 2) / vp.scrollWidth : 0.5;
-    const cy = vp.scrollHeight ? (vp.scrollTop + vp.clientHeight / 2) / vp.scrollHeight : 0.5;
+    const vr = vp.getBoundingClientRect();
+    const before = this._plan.getBoundingClientRect();
+    const px = clientX === undefined ? vr.left + vr.width / 2 : clientX;
+    const py = clientY === undefined ? vr.top + vr.height / 2 : clientY;
+    const fx = before.width ? (px - before.left) / before.width : 0.5;
+    const fy = before.height ? (py - before.top) / before.height : 0.5;
     this._zoom = next;
     this._plan.style.setProperty('--zoom', String(next));
     this._fitViewport();
-    vp.scrollLeft = cx * vp.scrollWidth - vp.clientWidth / 2;
-    vp.scrollTop = cy * vp.scrollHeight - vp.clientHeight / 2;
+    const after = this._plan.getBoundingClientRect();
+    vp.scrollLeft += (after.left + fx * after.width) - px;
+    vp.scrollTop += (after.top + fy * after.height) - py;
     if (this._pct) this._pct.textContent = `${Math.round(next * 100)}%`;
     if (remember) store.set(`${this._key}:zoom`, String(next));
     this._fitLabels();
@@ -1457,11 +1529,48 @@ class GhDashCard extends Base {
   }
 
   _wirePanZoom(vp) {
+    // mouse wheel (or touchpad pinch) over the plan = zoom around the pointer, like in edit mode
     vp.addEventListener('wheel', (ev) => {
-      if (!ev.ctrlKey) return;
       ev.preventDefault();
-      this._applyZoom(this._zoom + (ev.deltaY < 0 ? ZOOM_STEP : -ZOOM_STEP), true);
+      const now = Date.now();
+      if (now - (this._wheelAt || 0) > 300) this._wheelRest = 0; // a new gesture starts from zero
+      this._wheelAt = now;
+      const r = wheelSteps(this._wheelRest, ev.deltaY, ev.deltaMode);
+      this._wheelRest = r.rest;
+      if (r.steps) this._applyZoom(this._zoom + r.steps * ZOOM_STEP, true, ev.clientX, ev.clientY);
     }, { passive: false });
+    // touch screen: two fingers pinch = zoom around the fingers, moving both fingers = move the plan.
+    // One finger still scrolls the plan natively. The page itself is not pinch-zoomed.
+    const two = (ev) => {
+      const [a, b] = [ev.touches[0], ev.touches[1]];
+      return { d: Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY),
+        x: (a.clientX + b.clientX) / 2, y: (a.clientY + b.clientY) / 2 };
+    };
+    vp.addEventListener('touchstart', (ev) => {
+      if (ev.touches.length !== 2) return;
+      const p = two(ev);
+      this._pinch = { d: p.d, z: this._zoom, x: p.x, y: p.y };
+      this._cancelLongPress?.();
+    }, { passive: true });
+    vp.addEventListener('touchmove', (ev) => {
+      if (!this._pinch || ev.touches.length !== 2) return;
+      ev.preventDefault();
+      const p = two(ev);
+      vp.scrollLeft -= p.x - this._pinch.x;
+      vp.scrollTop -= p.y - this._pinch.y;
+      this._pinch.x = p.x;
+      this._pinch.y = p.y;
+      const z = pinchZoom(this._pinch.z, this._pinch.d, p.d);
+      if (z !== this._zoom) this._applyZoom(z, true, p.x, p.y);
+    }, { passive: false });
+    const endPinch = (ev) => {
+      if (!this._pinch || ev.touches.length >= 2) return;
+      this._pinch = null;
+      this._suppressClick = true; // lifting the fingers must not tap a button
+      setTimeout(() => { this._suppressClick = false; }, 350);
+    };
+    vp.addEventListener('touchend', endPinch);
+    vp.addEventListener('touchcancel', endPinch);
     // Mouse: drag to pan when the plan is larger than the view. Touch scrolls natively.
     vp.addEventListener('pointerdown', (ev) => {
       if (ev.pointerType !== 'mouse' || ev.button !== 0 || !vp.classList.contains('pannable')) return;
@@ -2092,7 +2201,11 @@ class GhDashCard extends Base {
       el.classList.toggle('alert', dom === 'binary_sensor' && on);
       el.classList.toggle('playing', dom === 'media_player' && !!s && s.state === 'playing');
       el.classList.toggle('unavailable', unav);
-      el.style.setProperty('--glow', this._config.glow_color === 'auto' ? glowColor(s, accent) : accent);
+      const gc = b.on_color || (this._config.glow_color === 'auto' ? glowColor(s, accent) : accent);
+      const gs = glowStrength(b, this._config);
+      el.style.setProperty('--glow', glowMix(gc, gs));
+      el.style.setProperty('--gs', String(gs / 100));
+      if (!el.classList.contains('circ')) paintBox(el, b, on);
       el.setAttribute('aria-pressed', String(on));
       const stateTxt = this._stateText(s, lang);
       el.setAttribute('aria-label', `${name}: ${stateTxt}`);
@@ -2184,14 +2297,24 @@ const EDITOR_CSS = `
            user-select: none; -webkit-user-select: none; cursor: grab; }
   .stage.drop { outline: 3px dashed var(--accent-color, #ff9800); outline-offset: -3px; }
   .stage img { width: 100%; height: auto; display: block; pointer-events: none; }
-  .box { position: absolute; box-sizing: border-box; cursor: move; border: 2px solid var(--primary-color, #03a9f4);
-         background: color-mix(in srgb, var(--primary-color, #03a9f4) 18%, transparent); border-radius: 5px;
+  .box { position: absolute; box-sizing: border-box; cursor: move; border: 2px solid var(--bd, var(--primary-color, #03a9f4));
+         background: var(--bg, color-mix(in srgb, var(--primary-color, #03a9f4) 18%, transparent)); border-radius: 5px;
          font: 600 max(7px, calc(var(--fs, 0.95) * 1cqw))/1.1 system-ui, sans-serif; color: var(--tc, #111);
          display: flex; align-items: center; justify-content: center; text-align: center; overflow: visible;
          transform: rotate(var(--rot, 0deg)); }
-  .box.text { border-style: dashed; background: transparent; }
+  .box.text { border-style: dashed; background: var(--bg, transparent); }
   .box { z-index: 2; }
-  .box.selected { border-color: var(--accent-color, #ff9800); background: color-mix(in srgb, var(--accent-color, #ff9800) 22%, transparent); z-index: 4; }
+  .box.selected { border-color: var(--accent-color, #ff9800); background: var(--bg, color-mix(in srgb, var(--accent-color, #ff9800) 22%, transparent)); z-index: 4; }
+  .crow { display: flex; align-items: center; gap: 6px; margin: 4px 0; font-size: 13px; }
+  .crow > span { flex: 1; }
+  .crow input[type=color] { width: 38px; height: 26px; padding: 0; border: 1px solid var(--divider-color, #ccc); border-radius: 4px; background: none; }
+  .crow .unset { font-size: 11px; opacity: .65; min-width: 52px; text-align: right; }
+  .crow button { all: unset; cursor: pointer; padding: 2px 6px; border-radius: 4px; font-size: 12px;
+                 border: 1px solid var(--divider-color, #ccc); }
+  .crow button:disabled { opacity: .4; cursor: default; }
+  .rng { margin: 6px 0; font-size: 13px; }
+  .rng .rl { display: flex; justify-content: space-between; }
+  .rng input { width: 100%; }
   .rbox { position: absolute; box-sizing: border-box; z-index: 1; cursor: move; border: 2px dashed #7b61ff;
           background: rgba(123, 97, 255, .08); border-radius: 6px; }
   .rbox .rn { position: absolute; left: 4px; top: 3px; font: 600 max(8px, .9cqw)/1.1 system-ui, sans-serif; color: #4b2fc4;
@@ -2364,7 +2487,8 @@ class GhDashCardEditor extends Base {
     if (normRotate(b.rotate)) out.rotate = normRotate(b.rotate);
     if (b.sliders === true) out.sliders = true;
     if (b.size !== undefined && b.size !== null && b.size !== '') out.size = round1(num(b.size, 1));
-    if (b.color) out.color = b.color;
+    COLOR_KEYS.forEach((k) => { if (b[k]) out[k] = b[k]; });
+    if (b.glow_opacity !== undefined && b.glow_opacity !== null && b.glow_opacity !== '') out.glow_opacity = clampPct(b.glow_opacity);
     return { ...out, ...clampRect(b) };
   }
 
@@ -2424,6 +2548,7 @@ class GhDashCardEditor extends Base {
     // left menu: the selected item's settings on top, the device scanner below
     const panel = this._panel(L);
     if (panel) side.appendChild(panel);
+    side.appendChild(this._appearance(L));
     side.appendChild(this._presetList(L));
     side.appendChild(this._palette());
     if (this._sideScroll) side.scrollTop = this._sideScroll;
@@ -2621,6 +2746,124 @@ class GhDashCardEditor extends Base {
     });
   }
 
+  /** Card-wide look, in the left menu (on the card and in Home Assistant's editor). */
+  _appearance(L) {
+    const box = document.createElement('div');
+    box.className = 'panel';
+    const h = document.createElement('h4');
+    h.textContent = L('appearance');
+    box.appendChild(h);
+    box.appendChild(this._range(L('glow_op_all'), clampPct(this._config.glow_opacity), (v) => {
+      this._config.glow_opacity = v; this._fire(); this._render(); // re-render: _fire() replaces the config objects
+    }));
+    const gc = this._config.glow_color && this._config.glow_color !== 'auto' ? this._config.glow_color : '';
+    box.appendChild(this._colorRow(L('glow_col'), gc, '#ffb300', L('auto_col'), L,
+      (v) => { this._config.glow_color = v || 'auto'; this._fire(); this._render(); }));
+    return box;
+  }
+
+  /** A slider 0-100 % with its value shown; `fallbackLabel` + reset button when the value may be unset. */
+  _range(labelText, value, onChange, fallbackLabel, onReset) {
+    const row = document.createElement('div');
+    row.className = 'rng';
+    const top = document.createElement('div');
+    top.className = 'rl';
+    const name = document.createElement('span');
+    name.textContent = labelText;
+    const val = document.createElement('b');
+    const unset = value === null;
+    val.textContent = unset ? fallbackLabel : `${value} %`;
+    top.appendChild(name);
+    top.appendChild(val);
+    row.appendChild(top);
+    const input = document.createElement('input');
+    input.type = 'range';
+    input.min = '0';
+    input.max = '100';
+    input.step = '5';
+    input.value = String(unset ? 100 : value);
+    input.setAttribute('aria-label', labelText);
+    input.addEventListener('input', () => { val.textContent = `${input.value} %`; });
+    input.addEventListener('change', () => onChange(clampPct(input.value)));
+    row.appendChild(input);
+    if (onReset) {
+      const r = document.createElement('div');
+      r.className = 'crow';
+      r.appendChild(document.createElement('span'));
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.textContent = fallbackLabel;
+      b.disabled = unset;
+      b.addEventListener('click', onReset);
+      r.appendChild(b);
+      row.appendChild(r);
+    }
+    return row;
+  }
+
+  /** A colour picker with a reset button; an empty value means "not set" (shows `unsetLabel`). */
+  _colorRow(labelText, value, pickerDefault, unsetLabel, L, onChange) {
+    const row = document.createElement('div');
+    row.className = 'crow';
+    const name = document.createElement('span');
+    name.textContent = labelText;
+    row.appendChild(name);
+    const unset = document.createElement('span');
+    unset.className = 'unset';
+    unset.textContent = value ? '' : unsetLabel;
+    row.appendChild(unset);
+    const input = document.createElement('input');
+    input.type = 'color';
+    input.value = /^#[0-9a-f]{6}$/i.test(value || '') ? value : pickerDefault;
+    input.setAttribute('aria-label', labelText);
+    input.addEventListener('change', () => onChange(input.value));
+    row.appendChild(input);
+    const reset = document.createElement('button');
+    reset.type = 'button';
+    reset.textContent = L('reset');
+    reset.title = `${L('reset')}: ${labelText}`;
+    reset.disabled = !value;
+    reset.addEventListener('click', () => onChange(''));
+    row.appendChild(reset);
+    return row;
+  }
+
+  /** The selected item's colours and glow brightness. */
+  _colorPanel(b, device, L) {
+    const box = document.createElement('div');
+    const h = document.createElement('h5');
+    h.textContent = L('colors');
+    box.appendChild(h);
+    const set = (k) => (v) => { if (v) b[k] = v; else delete b[k]; this._fire(); this._render(); };
+    const rows = [['color', L('c_text'), b.style === 'text' ? '#1d2330' : '#111111'],
+      ['bg_color', L('c_bg'), '#ffffff'], ['border_color', L('c_border'), '#333333']];
+    if (device) rows.push(['on_color', L('c_on'), '#ffb300'], ['on_bg_color', L('c_on_bg'), '#fff3c4']);
+    rows.forEach(([k, label, def]) => box.appendChild(this._colorRow(label, b[k] || '', def, L('not_set'), L, set(k))));
+    if (device) {
+      const own = b.glow_opacity !== undefined && b.glow_opacity !== null && b.glow_opacity !== '';
+      box.appendChild(this._range(L('glow_op'), own ? clampPct(b.glow_opacity) : null,
+        (v) => { b.glow_opacity = v; this._fire(); this._render(); },
+        `${L('same_card')} (${clampPct(this._config.glow_opacity)} %)`,
+        () => { delete b.glow_opacity; this._fire(); this._render(); }));
+    }
+    if (COLOR_KEYS.some((k) => b[k]) || (device && b.glow_opacity !== undefined)) {
+      const r = document.createElement('div');
+      r.className = 'crow';
+      r.appendChild(document.createElement('span'));
+      const all = document.createElement('button');
+      all.type = 'button';
+      all.textContent = L('c_reset');
+      all.addEventListener('click', () => {
+        COLOR_KEYS.forEach((k) => delete b[k]);
+        delete b.glow_opacity;
+        this._fire(); this._render();
+      });
+      r.appendChild(all);
+      box.appendChild(r);
+    }
+    return box;
+  }
+
   /** Card-wide settings (only in Home Assistant's card editor, not in the on-card edit mode). */
   _settings(root, L) {
     root.appendChild(this._field(L('image'), 'text', this._config.image || '', (v) => { this._config.image = v; this._fire(); this._render(); }));
@@ -2632,7 +2875,6 @@ class GhDashCardEditor extends Base {
       this._config.zoom = clampZoom(v); this._fire(); this._render();
     }, { step: String(ZOOM_STEP), min: String(ZOOM_MIN), max: String(ZOOM_MAX) }));
     root.appendChild(g2);
-    root.appendChild(this._field(L('glow'), 'text', this._config.glow_color || 'auto', (v) => { this._config.glow_color = v || 'auto'; this._fire(); }));
     root.appendChild(this._check(L('fit_opt'), this._config.fit !== false, (v) => { this._config.fit = v; this._fire(); }));
     root.appendChild(this._check(L('controls'), this._config.show_controls !== false, (v) => { this._config.show_controls = v; this._fire(); }));
   }
@@ -2956,6 +3198,10 @@ class GhDashCardEditor extends Base {
     if (!circ && normRotate(b.rotate)) el.style.setProperty('--rot', `${normRotate(b.rotate)}deg`);
     if (b.size) el.style.setProperty('--fs', String(b.size));
     if (b.color) el.style.setProperty('--tc', b.color);
+    if (!circ) {
+      if (b.bg_color) el.style.setProperty('--bg', b.bg_color);
+      if (b.border_color) el.style.setProperty('--bd', b.border_color);
+    }
     const grip = document.createElement('div');
     grip.className = 'grip';
     el.appendChild(grip);
@@ -3305,10 +3551,9 @@ class GhDashCardEditor extends Base {
     if (device) {
       g.appendChild(this._select(L('tap'), TAP_ACTIONS.map((a) => [a, L(`tap_${a}`)]), b.tap_action || 'toggle',
         (v) => { b.tap_action = v; this._fire(); }));
-    } else {
-      g.appendChild(this._field(L('color_txt'), 'color', b.color || '#1d2330', (v) => { b.color = v; this._fire(); this._render(); }));
     }
     panel.appendChild(g);
+    panel.appendChild(this._colorPanel(b, device, L));
     if (device && String(b.entity).startsWith('light.')) {
       panel.appendChild(this._check(L('sliders_opt'), b.sliders === true, (v) => { b.sliders = v; this._fire(); }));
     }

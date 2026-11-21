@@ -7,6 +7,7 @@ import {
   roomParts, sharedEdge, mergeRooms, resizeEdge, placedAt, fitFont, haSummary, fmtBytes, starterConfig,
   scanDevices, roomCall, allOffTargets, sensorText, autoPlace, mediaInfo, pushHistory,
   isPreset, isSensor, sensorIcon, allOnTargets,
+  wheelSteps, pinchZoom, clampPct, glowStrength, glowMix, COLOR_KEYS,
 } from '../dist/gh-dash.js';
 
 const S = (entity_id, state, attributes = {}) => ({ entity_id, state, attributes });
@@ -466,4 +467,41 @@ test('allOnTargets lists every placed light once, nothing else', () => {
 test('the built-in "turn everything off / on" presets are on unless switched off', () => {
   assert.equal(normalizeConfig({ image: '/x.png' }).home_presets, true);
   assert.equal(normalizeConfig({ image: '/x.png', home_presets: false }).home_presets, false);
+});
+
+test('wheelSteps: one mouse notch = one step, touchpad events add up, lines count as pixels', () => {
+  assert.deepEqual(wheelSteps(0, -100), { steps: 1, rest: -10 });
+  assert.deepEqual(wheelSteps(0, 120), { steps: -1, rest: 30 });
+  let r = { steps: 0, rest: 0 };
+  let total = 0;
+  for (let i = 0; i < 20; i += 1) { r = wheelSteps(r.rest, -6); total += r.steps; }
+  assert.equal(total, 1);
+  assert.equal(wheelSteps(0, -3, 1).steps, 1);
+  assert.equal(wheelSteps(0, -5000).steps, 2);
+  assert.equal(wheelSteps(0, 0).steps, 0);
+});
+
+test('pinchZoom: fingers apart = zoom in, together = out, limited and in 0.25 steps', () => {
+  assert.equal(pinchZoom(1, 100, 200), 2);
+  assert.equal(pinchZoom(1, 100, 50), 0.5);
+  assert.equal(pinchZoom(1, 100, 112), 1);
+  assert.equal(pinchZoom(1, 100, 130), 1.25);
+  assert.equal(pinchZoom(2, 100, 1000), 3);
+  assert.equal(pinchZoom(1, 0, 50), 1);
+});
+
+test('glow strength: item setting wins, then the card, default 100; mix with transparent', () => {
+  assert.equal(clampPct(''), 100);
+  assert.equal(clampPct('abc', 40), 40);
+  assert.equal(clampPct(150), 100);
+  assert.equal(clampPct(-3), 0);
+  assert.equal(glowStrength({}, {}), 100);
+  assert.equal(glowStrength({}, { glow_opacity: 40 }), 40);
+  assert.equal(glowStrength({ glow_opacity: 0 }, { glow_opacity: 40 }), 0);
+  assert.equal(glowStrength({ glow_opacity: '' }, { glow_opacity: 40 }), 40);
+  assert.equal(glowMix('#ff0000', 100), '#ff0000');
+  assert.equal(glowMix('#ff0000', 30), 'color-mix(in srgb, #ff0000 30%, transparent)');
+  assert.equal(normalizeConfig({ image: 'x' }).glow_opacity, 100);
+  assert.equal(normalizeConfig({ image: 'x', glow_opacity: '55' }).glow_opacity, 55);
+  assert.deepEqual(COLOR_KEYS, ['color', 'bg_color', 'border_color', 'on_color', 'on_bg_color']);
 });
