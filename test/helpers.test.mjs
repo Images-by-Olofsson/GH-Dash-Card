@@ -329,11 +329,14 @@ test('normalizeConfig: fit defaults to true', () => {
   assert.equal(normalizeConfig({ image: '/x.png', fit: false }).fit, false);
 });
 
-test('clampZoom keeps 0.5..3 in 0.25 steps', () => {
+test('clampZoom keeps 0.5..3 in 0.1 steps without float noise', () => {
   assert.equal(clampZoom(1), 1);
   assert.equal(clampZoom(5), 3);
   assert.equal(clampZoom(0.1), 0.5);
-  assert.equal(clampZoom(1.3), 1.25);
+  assert.equal(clampZoom(1.26), 1.3);
+  assert.equal(clampZoom(0.7), 0.7);
+  assert.equal(clampZoom(0.5 + 3 * 0.1), 0.8);
+  assert.equal(clampZoom(2.94), 2.9);
   assert.equal(clampZoom('2'), 2);
   assert.equal(clampZoom(undefined), 1);
 });
@@ -480,13 +483,15 @@ test('wheelSteps: one mouse notch = one step, touchpad events add up, lines coun
   assert.equal(wheelSteps(0, -3, 1).steps, 1);
   assert.equal(wheelSteps(0, -5000).steps, 2);
   assert.equal(wheelSteps(0, 0).steps, 0);
+  assert.deepEqual(wheelSteps(-30, 100), { steps: -1, rest: 10 }); // direction change: leftover is dropped
 });
 
-test('pinchZoom: fingers apart = zoom in, together = out, limited and in 0.25 steps', () => {
+test('pinchZoom: fingers apart = zoom in, together = out, limited and in 0.1 steps', () => {
   assert.equal(pinchZoom(1, 100, 200), 2);
   assert.equal(pinchZoom(1, 100, 50), 0.5);
-  assert.equal(pinchZoom(1, 100, 112), 1);
-  assert.equal(pinchZoom(1, 100, 130), 1.25);
+  assert.equal(pinchZoom(1, 100, 104), 1);
+  assert.equal(pinchZoom(1, 100, 112), 1.1);
+  assert.equal(pinchZoom(1, 100, 130), 1.3);
   assert.equal(pinchZoom(2, 100, 1000), 3);
   assert.equal(pinchZoom(1, 0, 50), 1);
 });

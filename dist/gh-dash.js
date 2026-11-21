@@ -7,7 +7,7 @@
  *
  * Card type: custom:gh-dash-card
  */
-const VERSION = '0.15.0';
+const VERSION = '0.15.1';
 
 // ---------------------------------------------------------------- helpers --
 
@@ -39,7 +39,7 @@ const MP_NEXT = 32;
 const MP_PLAY = 16384;
 export const ZOOM_MIN = 0.5;
 export const ZOOM_MAX = 3;
-export const ZOOM_STEP = 0.25;
+export const ZOOM_STEP = 0.1;
 
 const round1 = (v) => Math.round(v * 10) / 10;
 const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
@@ -112,7 +112,9 @@ export const WHEEL_NOTCH = 90;
  */
 export function wheelSteps(rest, deltaY, deltaMode = 0) {
   const unit = deltaMode === 1 ? 33 : deltaMode === 2 ? 400 : 1; // lines / pages -> pixels
-  const acc = num(rest, 0) + num(deltaY, 0) * unit;
+  const d = num(deltaY, 0) * unit;
+  const r = num(rest, 0);
+  const acc = (r * d < 0 ? 0 : r) + d; // turning the wheel the other way starts from zero
   const n = Math.trunc(acc / WHEEL_NOTCH);
   return { steps: clamp(-n, -2, 2) || 0, rest: acc - n * WHEEL_NOTCH };
 }
@@ -158,9 +160,9 @@ export function pinchZoom(startZoom, startDist, dist) {
   return clampZoom(num(startZoom, 1) * (dist / startDist));
 }
 
-/** Zoom factor limited to 0.5..3 in 0.25 steps. */
+/** Zoom factor limited to 0.5..3 in 0.1 steps (rounded to 2 decimals, so 0.7 stays 0.7). */
 export function clampZoom(z) {
-  return clamp(Math.round(num(z, 1) / ZOOM_STEP) * ZOOM_STEP, ZOOM_MIN, ZOOM_MAX);
+  return clamp(Math.round(Math.round(num(z, 1) / ZOOM_STEP) * ZOOM_STEP * 100) / 100, ZOOM_MIN, ZOOM_MAX);
 }
 
 /** A new 8x3 % box centred on a drop point; null when dropped outside the plan. */
@@ -2925,12 +2927,12 @@ class GhDashCardEditor extends Base {
       bar.appendChild(b);
       return b;
     };
-    btn('minus', L('zoom_out'), () => this._setZoom(this._ez / 1.25), 'act icon');
+    btn('minus', L('zoom_out'), () => this._setZoom(this._ez / 1.1), 'act icon');
     this._pct = document.createElement('span');
     this._pct.className = 'pct';
     this._pct.textContent = `${Math.round(this._ez * 100)}%`;
     bar.appendChild(this._pct);
-    btn('plus', L('zoom_in'), () => this._setZoom(this._ez * 1.25), 'act icon');
+    btn('plus', L('zoom_in'), () => this._setZoom(this._ez * 1.1), 'act icon');
     btn('fit', L('fit'), () => { this._ez = 1; this._layout(); this._wrap.scrollLeft = 0; this._wrap.scrollTop = 0; }, 'act icon');
     const sp = document.createElement('span');
     sp.className = 'sp';
@@ -3028,7 +3030,7 @@ class GhDashCardEditor extends Base {
     // mouse wheel = zoom around the pointer
     wrap.addEventListener('wheel', (ev) => {
       ev.preventDefault();
-      this._setZoom(this._ez * (ev.deltaY < 0 ? 1.15 : 1 / 1.15), ev.clientX, ev.clientY);
+      this._setZoom(this._ez * (ev.deltaY < 0 ? 1.1 : 1 / 1.1), ev.clientX, ev.clientY);
     }, { passive: false });
     // drag on an empty spot = move the plan; a click on an empty spot = deselect
     wrap.addEventListener('pointerdown', (ev) => {
