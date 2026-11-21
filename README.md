@@ -12,6 +12,9 @@ A dashboard card that shows a floor plan with your devices on top of it.
   and smoke sensors turn red when open or triggered. Tap one for its details.
 - **Scenes and scripts** are preset buttons next to the plan (above the sensors): tap to run them,
   the button flashes. On a narrow screen the scenes and sensors are shown below the plan.
+  Two built-in presets come first: **Turn everything off** (every light, plug, TV and fan on the
+  plan) and **All lights on** (every light on the plan). Hide them with `home_presets: false` or the
+  checkbox in edit mode.
 - **Rooms**: draw room areas on the plan. A device belongs to the room its centre is in, a room is
   tinted when something in it is on, and tapping a room shows what is on there (with its sensor
   values) plus **Turn off all** and **Turn on the lights** for that room.
@@ -104,6 +107,7 @@ zoom: 1                     # start zoom 0.5-3, used when fit is off
 glow_color: auto            # or any CSS colour
 show_controls: true         # buttons on the card (default true)
 dim_after: 120              # wall panel: dim after this many seconds without a touch (0 = never)
+home_presets: true          # "Turn everything off" and "All lights on" with the scenes (default true)
 buttons:
   - entity: light.living_room_lamp
     label: Living room lamp # optional, default = the device's name

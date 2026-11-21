@@ -7,7 +7,7 @@
  *
  * Card type: custom:gh-dash-card
  */
-const VERSION = '0.12.0';
+const VERSION = '0.13.0';
 
 // ---------------------------------------------------------------- helpers --
 
@@ -318,6 +318,15 @@ export function allOffTargets(buttons) {
   return out;
 }
 
+/** Every placed light, each once (for 'turn everything on'). */
+export function allOnTargets(buttons) {
+  const out = [];
+  (buttons || []).forEach((b) => {
+    if (b.entity && String(b.entity).startsWith('light.') && !out.includes(b.entity)) out.push(b.entity);
+  });
+  return out;
+}
+
 /** A sensor's value as short text: '21,5 °C' (sv) / '21.5 °C' (en), '–' when unknown. */
 export function sensorText(stateObj, lang) {
   if (isUnavailable(stateObj)) return '–';
@@ -504,7 +513,7 @@ export function normalizeConfig(cfg) {
   return {
     ...cfg, buttons, rooms, glow_color: cfg.glow_color || 'auto', theme,
     zoom: clampZoom(cfg.zoom), show_controls: cfg.show_controls !== false, fit: cfg.fit !== false,
-    dim_after: Math.max(0, num(cfg.dim_after, 120)),
+    dim_after: Math.max(0, num(cfg.dim_after, 120)), home_presets: cfg.home_presets !== false,
   };
 }
 
@@ -536,6 +545,8 @@ const TEXTS = {
     room_on: 'Turn on the lights', wall: 'Wall panel', wake: 'Tap to wake', play_pause: 'Play/pause', prev: 'Previous',
     next: 'Next', volume: 'Volume', nothing_playing: 'Nothing is playing', bs_open: 'open', bs_closed: 'closed',
     bs_motion: 'motion', bs_clear: 'no motion', bs_wet: 'water!', bs_dry: 'dry', bs_smoke: 'smoke!', bs_nosmoke: 'no smoke',
+    home_off: 'Turn everything off', home_on: 'All lights on',
+    home_presets_opt: 'Show "Turn everything off" and "All lights on" with the scenes',
     presets: 'Scenes', sensors_title: 'Sensors', presets_editor: 'Scenes and scripts (buttons next to the plan)',
     presets_none: 'Tap a scene or script in the Devices list to add it here.', p_remove: 'Remove',
     undo: 'Undo', auto_place: 'Place by area', auto_placed: 'Placed {n} devices in rooms named like their Home Assistant area.',
@@ -581,6 +592,8 @@ const TEXTS = {
     room_on: 'Tänd lamporna', wall: 'Väggpanel', wake: 'Tryck för att väcka', play_pause: 'Spela/pausa', prev: 'Föregående',
     next: 'Nästa', volume: 'Volym', nothing_playing: 'Inget spelas', bs_open: 'öppen', bs_closed: 'stängd',
     bs_motion: 'rörelse', bs_clear: 'ingen rörelse', bs_wet: 'vatten!', bs_dry: 'torrt', bs_smoke: 'rök!', bs_nosmoke: 'ingen rök',
+    home_off: 'Släck allt', home_on: 'Tänd allt',
+    home_presets_opt: 'Visa "Släck allt" och "Tänd allt" bland scenerna',
     presets: 'Scener', sensors_title: 'Sensorer', presets_editor: 'Scener och skript (knappar bredvid planen)',
     presets_none: 'Tryck på en scen eller ett skript i listan Enheter för att lägga till den här.', p_remove: 'Ta bort',
     undo: 'Ångra', auto_place: 'Placera efter område', auto_placed: '{n} enheter placerades i rum med samma namn som deras område i Home Assistant.',
@@ -709,34 +722,61 @@ const CARD_CSS = `
   .body { display: grid; grid-template-columns: minmax(0, 1fr); gap: 12px; }
   @container (min-width: 720px) { .body.has-side { grid-template-columns: minmax(0, 1fr) 240px; } }
   .mainc { position: relative; min-width: 0; }
-  .side { display: flex; flex-direction: column; gap: 14px; font-size: .9rem; line-height: 1.3; min-width: 0; }
-  .side h4 { margin: 0 0 6px; font-size: .75rem; font-weight: 600; text-transform: uppercase; letter-spacing: .06em;
-             color: var(--secondary-text-color, #666); }
-  ha-card.dark .side h4 { color: #9aa3b2; }
-  .presets { display: grid; grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)); gap: 6px; }
-  .preset { all: unset; box-sizing: border-box; display: flex; align-items: center; gap: 8px; padding: 10px; min-height: 44px;
-            border-radius: 10px; cursor: pointer; background: var(--secondary-background-color, #f1f3f5);
-            color: var(--primary-text-color, #111); font-weight: 500; overflow-wrap: anywhere;
-            transition: background-color .2s; -webkit-tap-highlight-color: transparent; }
-  .preset:hover { background: color-mix(in srgb, var(--primary-color, #03a9f4) 16%, var(--secondary-background-color, #f1f3f5)); }
-  .preset:focus-visible { outline: 2px solid var(--primary-color, #03a9f4); }
-  .preset .ic { color: var(--primary-color, #03a9f4); }
-  .preset.unavailable { opacity: .5; cursor: not-allowed; }
+  .side { display: flex; flex-direction: column; gap: 12px; font-size: .9rem; line-height: 1.3; min-width: 0; }
+  .sbox { border: 1px solid var(--divider-color, #e3e6ea); border-radius: 14px; padding: 12px;
+          background: var(--card-background-color, #fff); box-shadow: 0 1px 3px rgba(0, 0, 0, .06); }
+  ha-card.dark .sbox { background: #171c24; border-color: #2a313d; box-shadow: none; }
+  .sbox .sh { display: flex; align-items: center; gap: 8px; margin: 0 0 10px; padding-bottom: 8px;
+              border-bottom: 1px solid var(--divider-color, #e3e6ea); font-size: .8rem; font-weight: 600;
+              text-transform: uppercase; letter-spacing: .06em; color: var(--secondary-text-color, #5f6672); }
+  ha-card.dark .sbox .sh { border-color: #2a313d; color: #9aa3b2; }
+  .sbox .sh .ic { color: var(--primary-color, #03a9f4); }
+  .sbox .sh .grow { flex: 1; }
+  .sbox .sh .cnt { font-size: .72rem; font-weight: 600; letter-spacing: 0; padding: 1px 8px; border-radius: 10px;
+                   background: var(--secondary-background-color, #f1f3f5); color: var(--secondary-text-color, #5f6672); }
+  ha-card.dark .sbox .sh .cnt { background: #232a35; color: #aab3c2; }
+  .presets { display: grid; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: 8px; }
+  .preset { all: unset; box-sizing: border-box; display: flex; flex-direction: column; align-items: center; justify-content: center;
+            gap: 6px; padding: 12px 8px; min-height: 84px; text-align: center; border-radius: 12px; cursor: pointer;
+            background: var(--secondary-background-color, #f4f6f8); color: var(--primary-text-color, #111);
+            font-size: .85rem; font-weight: 500; line-height: 1.2; overflow-wrap: anywhere;
+            transition: background-color .2s, transform .1s; -webkit-tap-highlight-color: transparent; --pc: var(--primary-color, #03a9f4); }
+  .preset:hover { background: color-mix(in srgb, var(--pc) 14%, var(--secondary-background-color, #f4f6f8)); }
+  .preset:active { transform: scale(.97); }
+  .preset:focus-visible { outline: 2px solid var(--pc); }
+  .preset .pic { width: 36px; height: 36px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center;
+                 background: color-mix(in srgb, var(--pc) 16%, transparent); color: var(--pc); }
+  .preset.k-off { --pc: var(--error-color, #e53935); }
+  .preset.k-on { --pc: #f2a100; }
+  .preset.k-script { --pc: #7e57c2; }
+  .preset.unavailable { opacity: .45; cursor: not-allowed; }
   .preset.fired { animation: gh-fired .9s ease-out; }
-  ha-card.dark .preset { background: #1d232c; color: #e6e9ef; }
-  .srows { display: flex; flex-direction: column; gap: 2px; }
-  .srow { all: unset; box-sizing: border-box; display: flex; align-items: center; gap: 10px; padding: 6px 8px; border-radius: 8px;
-          cursor: pointer; -webkit-tap-highlight-color: transparent; }
-  .srow:hover { background: rgba(127, 127, 127, .12); }
-  .srow:focus-visible { outline: 2px solid var(--primary-color, #03a9f4); }
-  .srow .sic { flex: none; width: 30px; height: 30px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center;
-               background: var(--secondary-background-color, #f1f3f5); color: var(--primary-color, #03a9f4); }
-  ha-card.dark .srow .sic { background: #1d232c; }
+  ha-card.dark .preset { background: #1f2530; color: #e6e9ef; }
+  ha-card.dark .preset:hover { background: color-mix(in srgb, var(--pc) 18%, #1f2530); }
+  .srows { display: flex; flex-direction: column; }
+  .srow { all: unset; box-sizing: border-box; display: flex; align-items: center; gap: 10px; padding: 8px 4px; cursor: pointer;
+          border-top: 1px solid var(--divider-color, #eceef1); -webkit-tap-highlight-color: transparent; --sc: var(--primary-color, #03a9f4); }
+  .srow:first-child { border-top: none; padding-top: 2px; }
+  ha-card.dark .srow { border-color: #262d38; }
+  .srow:hover .sn span { text-decoration: underline; }
+  .srow:focus-visible { outline: 2px solid var(--primary-color, #03a9f4); border-radius: 6px; }
+  .srow .sic { flex: none; width: 32px; height: 32px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center;
+               background: color-mix(in srgb, var(--sc) 15%, transparent); color: var(--sc); }
+  .srow.k-thermo { --sc: #f57c00; }
+  .srow.k-drop { --sc: #1e88e5; }
+  .srow.k-door, .srow.k-window { --sc: #00897b; }
+  .srow.k-motion { --sc: #8e24aa; }
+  .srow.k-flame { --sc: #e53935; }
   .srow .sn { flex: 1; min-width: 0; }
-  .srow .sn small { display: block; font-size: .75rem; color: var(--secondary-text-color, #666); }
-  .srow .sv { font-weight: 600; white-space: nowrap; }
-  .srow.alert .sic { background: var(--error-color, #e53935); color: #fff; }
-  .srow.alert .sv { color: var(--error-color, #e53935); }
+  .srow .sn span { display: block; font-weight: 500; overflow-wrap: anywhere; }
+  .srow .sn small { display: block; font-size: .75rem; color: var(--secondary-text-color, #6b7280); }
+  ha-card.dark .srow .sn small { color: #8f98a8; }
+  .srow .sv { flex: none; font-weight: 600; font-size: .85rem; white-space: nowrap; padding: 3px 9px; border-radius: 10px;
+              background: var(--secondary-background-color, #f1f3f5); }
+  ha-card.dark .srow .sv { background: #232a35; }
+  .srow.alert { --sc: var(--error-color, #e53935); }
+  .srow.alert .sic { background: var(--sc); color: #fff; }
+  .srow.alert .sv { background: color-mix(in srgb, var(--sc) 15%, transparent); color: var(--sc); }
   .srow.unavailable { opacity: .55; }
   .btn.circ { width: max(22px, 2.6cqw) !important; height: auto !important; aspect-ratio: 1; border-radius: 50%; padding: 0;
               transform: translate(-50%, -50%); background: #fff; color: #1d6fb8; border: 1px solid #5b6576; }
@@ -1088,43 +1128,75 @@ class GhDashCard extends Base {
   /** Scenes/scripts as preset buttons and the sensors' values, next to the plan (below it on narrow screens). */
   _buildSide() {
     const L = (k) => t(this._lang(), k);
-    const presets = this._config.buttons.filter((b) => isPreset(b.entity));
+    const scenes = this._config.buttons.filter((b) => isPreset(b.entity));
     const sensors = this._config.buttons.filter((b) => isSensor(b.entity));
+    const home = this._config.home_presets && allOffTargets(this._config.buttons).length > 0;
     this._presetEls = [];
     this._sensorRows = [];
-    if (!presets.length && !sensors.length) return null;
+    if (!scenes.length && !sensors.length && !home) return null;
     const side = document.createElement('div');
     side.className = 'side';
-    if (presets.length) {
+    const section = (icon, title, count) => {
       const sec = document.createElement('section');
+      sec.className = 'sbox';
       const h = document.createElement('h4');
-      h.textContent = L('presets');
+      h.className = 'sh';
+      const ic = iconEl(icon, 16);
+      if (ic) h.appendChild(ic);
+      const ti = document.createElement('span');
+      ti.className = 'grow';
+      ti.textContent = title;
+      h.appendChild(ti);
+      const cnt = document.createElement('span');
+      cnt.className = 'cnt';
+      cnt.textContent = String(count);
+      h.appendChild(cnt);
       sec.appendChild(h);
+      side.appendChild(sec);
+      return sec;
+    };
+    if (scenes.length || home) {
+      const sec = section('star', L('presets'), scenes.length + (home ? 2 : 0));
       const grid = document.createElement('div');
       grid.className = 'presets';
-      presets.forEach((b) => {
+      const tile = (kind, b, run) => {
         const el = document.createElement('button');
         el.type = 'button';
-        el.className = 'preset';
+        el.className = `preset k-${kind}`;
+        const pic = document.createElement('span');
+        pic.className = 'pic';
+        const nm = document.createElement('span');
+        nm.className = 'pn';
+        el.appendChild(pic);
+        el.appendChild(nm);
         el.addEventListener('click', () => {
-          if (!this._hass || isUnavailable(this._hass.states[b.entity])) return;
-          const c = toggleCall(b.entity);
-          this._hass.callService(c.domain, c.service, c.data);
+          if (!this._hass || el.classList.contains('unavailable')) return;
+          run();
           el.classList.remove('fired');
           void el.offsetWidth; // restart the animation
           el.classList.add('fired');
         });
         grid.appendChild(el);
-        this._presetEls.push({ b, el });
-      });
+        this._presetEls.push({ kind, b, el, pic, nm });
+      };
+      if (home) {
+        tile('off', null, () => {
+          const ids = allOffTargets(this._config.buttons);
+          if (ids.length) this._hass.callService('homeassistant', 'turn_off', { entity_id: ids });
+        });
+        tile('on', null, () => {
+          const ids = allOnTargets(this._config.buttons);
+          if (ids.length) this._hass.callService('light', 'turn_on', { entity_id: ids });
+        });
+      }
+      scenes.forEach((b) => tile(b.entity.startsWith('script.') ? 'script' : 'scene', b, () => {
+        const c = toggleCall(b.entity);
+        this._hass.callService(c.domain, c.service, c.data);
+      }));
       sec.appendChild(grid);
-      side.appendChild(sec);
     }
     if (sensors.length) {
-      const sec = document.createElement('section');
-      const h = document.createElement('h4');
-      h.textContent = L('sensors_title');
-      sec.appendChild(h);
+      const sec = section('gauge', L('sensors_title'), sensors.length);
       const list = document.createElement('div');
       list.className = 'srows';
       sensors.forEach((b) => {
@@ -1149,30 +1221,43 @@ class GhDashCard extends Base {
         this._sensorRows.push({ b, el, ic, name, room, sv });
       });
       sec.appendChild(list);
-      side.appendChild(sec);
     }
     return side;
   }
 
   _updateSide(lang) {
-    (this._presetEls || []).forEach(({ b, el }) => {
-      const s = this._hass.states[b.entity];
-      const name = this._name(b.entity, b.label);
-      const icon = b.entity.startsWith('script.') ? 'play' : 'star';
-      if (el.dataset.name !== name) { setContent(el, icon, name, 18); el.dataset.name = name; }
-      el.classList.toggle('unavailable', isUnavailable(s));
+    (this._presetEls || []).forEach(({ kind, b, el, pic, nm }) => {
+      let name;
+      let icon;
+      let unav;
+      if (kind === 'off') {
+        name = t(lang, 'home_off'); icon = 'power'; unav = !allOffTargets(this._config.buttons).length;
+      } else if (kind === 'on') {
+        name = t(lang, 'home_on'); icon = 'bulb'; unav = !allOnTargets(this._config.buttons).length;
+      } else {
+        name = this._name(b.entity, b.label); icon = kind === 'script' ? 'play' : 'star'; unav = isUnavailable(this._hass.states[b.entity]);
+      }
+      if (pic.dataset.ic !== icon) { setContent(pic, icon, '', 20); pic.dataset.ic = icon; }
+      nm.textContent = name;
       el.title = name;
+      el.classList.toggle('unavailable', unav);
+      el.setAttribute('aria-disabled', String(unav));
     });
     (this._sensorRows || []).forEach((r) => {
       const s = this._hass.states[r.b.entity];
       const icon = sensorIcon(s, r.b.entity);
-      if (r.ic.dataset.ic !== icon) { setContent(r.ic, icon, '', 16); r.ic.dataset.ic = icon; }
+      if (r.ic.dataset.ic !== icon) {
+        setContent(r.ic, icon, '', 16);
+        r.ic.dataset.ic = icon;
+        r.el.className = `srow k-${icon}`;
+      }
       r.name.textContent = this._name(r.b.entity, r.b.label);
       const ri = roomOf(this._config.rooms, r.b);
       r.room.textContent = ri >= 0 ? (this._config.rooms[ri].name || '') : '';
       r.sv.textContent = this._stateText(s, lang);
       r.el.classList.toggle('alert', r.b.entity.startsWith('binary_sensor.') && isOn(s));
       r.el.classList.toggle('unavailable', isUnavailable(s));
+      r.el.title = `${r.name.textContent}: ${r.sv.textContent}`;
     });
   }
 
@@ -2643,6 +2728,10 @@ class GhDashCardEditor extends Base {
     const h = document.createElement('h4');
     h.textContent = L('presets_editor');
     box.appendChild(h);
+    box.appendChild(this._check(L('home_presets_opt'), this._config.home_presets !== false, (v) => {
+      if (v) delete this._config.home_presets; else this._config.home_presets = false;
+      this._fire();
+    }));
     let any = false;
     this._config.buttons.forEach((b, i) => {
       if (!isPreset(b.entity)) return;
