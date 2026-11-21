@@ -9,6 +9,7 @@ import {
   isPreset, isSensor, sensorIcon, allOnTargets,
   wheelSteps, pinchZoom, clampPct, glowStrength, glowMix, COLOR_KEYS,
   roomControl, roomSwitchCall, roomSliderCall, roomListItems,
+  viewHeight,
 } from '../dist/gh-dash.js';
 
 const S = (entity_id, state, attributes = {}) => ({ entity_id, state, attributes });
@@ -542,4 +543,12 @@ test('roomListItems: devices first, sensors apart, scenes left out, each once', 
   assert.deepEqual(roomListItems(['light.a', 'sensor.t', 'light.a', 'scene.film', 'binary_sensor.d', 'switch.p']),
     { devices: ['light.a', 'switch.p'], sensors: ['sensor.t', 'binary_sensor.d'] });
   assert.deepEqual(roomListItems(null), { devices: [], sensors: [] });
+});
+
+test('viewHeight: the plan never gets taller than the space left on screen', () => {
+  assert.equal(viewHeight(120, 800), 800 - 120 - 56);       // card near the top
+  assert.equal(viewHeight(-300, 800), 800 - 56);            // page scrolled past the card top
+  assert.equal(viewHeight(700, 800), 800 - 400 - 56);       // card far down: at most half the screen above it
+  assert.equal(viewHeight(0, 800, true), 800 - 16);         // full screen
+  assert.equal(viewHeight(100, 200), 160);                  // tiny window: minimum height
 });

@@ -29,7 +29,9 @@ A dashboard card that shows a floor plan with your devices on top of it.
   connection, entities, updates and (for admins) system, disk and repairs.
 - **Scale to fit**, **zoom**, **light/dark** and **full screen** buttons on the card. Zoom also with
   the mouse wheel over the plan (it zooms around the pointer) or by pinching with two fingers on a
-  tablet or touch screen; drag (or swipe) to move the plan.
+  tablet or touch screen; drag (or swipe with one finger) to move the plan in any direction.
+  The plan never gets taller than the screen (phone, tablet or desktop): when it is zoomed in or
+  taller than the screen you move around inside it, without scrolling the whole page.
 - **Your own button colours**: background, border, text, the glow when on and the background when on,
   per item. A **Glow brightness** slider sets how strongly the buttons shine (for all buttons, and
   per button if one should shine more or less).
