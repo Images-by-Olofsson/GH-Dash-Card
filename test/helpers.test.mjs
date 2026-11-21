@@ -6,6 +6,7 @@ import {
   normRotate, lightCaps, brightnessPct, hueOf, lightCall, angleTo, roomOf, roomMembers,
   roomParts, sharedEdge, mergeRooms, resizeEdge, placedAt, fitFont, haSummary, fmtBytes, starterConfig,
   scanDevices, roomCall, allOffTargets, sensorText, autoPlace, mediaInfo, pushHistory,
+  isPreset, isSensor, sensorIcon,
 } from '../dist/gh-dash.js';
 
 const S = (entity_id, state, attributes = {}) => ({ entity_id, state, attributes });
@@ -422,4 +423,34 @@ test('t: Swedish and English', () => {
   assert.equal(t('sv-SE', 'unavailable'), 'ej tillgänglig');
   assert.equal(t('en', 'on'), 'on');
   assert.equal(t('de', 'off'), 'off');
+});
+
+test('scenes and scripts are presets, sensors are sensors', () => {
+  assert.equal(isPreset('scene.film'), true);
+  assert.equal(isPreset('script.godnatt'), true);
+  assert.equal(isPreset('light.a'), false);
+  assert.equal(isPreset(undefined), false);
+  assert.equal(isSensor('sensor.temp'), true);
+  assert.equal(isSensor('binary_sensor.door'), true);
+  assert.equal(isSensor('switch.x'), false);
+});
+
+test('sensorIcon picks the icon from the device class', () => {
+  const S2 = (id, dc) => ({ entity_id: id, state: 'on', attributes: { device_class: dc } });
+  assert.equal(sensorIcon(S2('sensor.t', 'temperature')), 'thermo');
+  assert.equal(sensorIcon(S2('sensor.h', 'humidity')), 'drop');
+  assert.equal(sensorIcon(S2('sensor.p', 'power')), 'gauge');
+  assert.equal(sensorIcon(S2('binary_sensor.d', 'door')), 'door');
+  assert.equal(sensorIcon(S2('binary_sensor.g', 'garage_door')), 'door');
+  assert.equal(sensorIcon(S2('binary_sensor.w', 'window')), 'window');
+  assert.equal(sensorIcon(S2('binary_sensor.m', 'motion')), 'motion');
+  assert.equal(sensorIcon(S2('binary_sensor.l', 'moisture')), 'drop');
+  assert.equal(sensorIcon(S2('binary_sensor.s', 'smoke')), 'flame');
+  assert.equal(sensorIcon(undefined, 'sensor.unknown'), 'gauge');
+});
+
+test('scenes do not belong to the room they happen to sit in', () => {
+  const rooms = [{ name: 'A', x: 0, y: 0, w: 50, h: 50 }];
+  const buttons = [{ entity: 'light.a', x: 10, y: 10, w: 5, h: 3 }, { entity: 'scene.film', x: 10, y: 10, w: 5, h: 3 }];
+  assert.deepEqual(roomMembers(rooms, buttons), [['light.a']]);
 });

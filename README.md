@@ -7,9 +7,11 @@ A dashboard card that shows a floor plan with your devices on top of it.
 - **Long-press** (or right-click) a light with sliders enabled to change brightness, colour and
   warm/cold white. Long-press a TV or speaker for what is playing (title, artist, artwork),
   previous / play-pause / next and volume. Other devices open Home Assistant's normal details dialog.
-- **Sensors**: temperature, humidity and moisture show their value on the plan; door, window,
-  motion, leak and smoke sensors glow red when open or triggered.
-- **Scenes and scripts**: tap to run them; the button flashes.
+- **Sensors** are small round icons on the plan (thermometer, drop, door, window, motion, flame).
+  Their values are listed next to the plan with the room they are in; door, window, motion, leak
+  and smoke sensors turn red when open or triggered. Tap one for its details.
+- **Scenes and scripts** are preset buttons next to the plan (above the sensors): tap to run them,
+  the button flashes. On a narrow screen the scenes and sensors are shown below the plan.
 - **Rooms**: draw room areas on the plan. A device belongs to the room its centre is in, a room is
   tinted when something in it is on, and tapping a room shows what is on there (with its sensor
   values) plus **Turn off all** and **Turn on the lights** for that room.
@@ -83,6 +85,8 @@ selected item on top, the device list below.
 - **Place by area** (after a scan) puts every device whose Home Assistant area has the same name as a
   room on the plan into that room. Sensors are listed too (temperature, humidity, doors, windows,
   motion, leaks, smoke), and so are scenes and scripts.
+- **Scenes and scripts**: tap one in the Devices list to add it as a preset button; the list
+  "Scenes and scripts" in the left menu shows them, with an x to remove one.
 - **Undo** (toolbar or Ctrl+Z) takes back the last change; Cancel throws away everything since you opened edit mode.
 - **Upload floor plan** stores an image in Home Assistant (like the picture card does) and uses
   it as the plan. Invisible click areas made for labels drawn in the old image become visible labels.
