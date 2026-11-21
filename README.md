@@ -22,7 +22,12 @@ A dashboard card that shows a floor plan with your devices on top of it.
   (tap twice - the first tap only arms it, so it is not pressed by mistake).
 - **Home Assistant information**: an item can show a panel with the Home Assistant version,
   connection, entities, updates and (for admins) system, disk and repairs.
-- **Scale to fit**, **zoom**, **light/dark** and **full screen** buttons on the card.
+- **Scale to fit**, **zoom**, **light/dark** and **full screen** buttons on the card. Zoom also with
+  the mouse wheel over the plan (it zooms around the pointer) or by pinching with two fingers on a
+  tablet or touch screen; drag (or swipe) to move the plan.
+- **Your own button colours**: background, border, text, the glow when on and the background when on,
+  per item. A **Glow brightness** slider sets how strongly the buttons shine (for all buttons, and
+  per button if one should shine more or less).
 - **Wall panel** mode for a touch screen: full screen, keeps the screen on where the browser
   allows it, and dims after a while without touches (the first touch only wakes it).
 - **Edit on the card** (admins): add devices by drag and drop or let **Place by area** put them in
@@ -94,7 +99,10 @@ selected item on top, the device list below.
 - **Upload floor plan** stores an image in Home Assistant (like the picture card does) and uses
   it as the plan. Invisible click areas made for labels drawn in the old image become visible labels.
 - Item options: label, style (`label` box, `hotspot` invisible area over a label in the image,
-  `text`), action on tap, sliders for lights, size and rotation.
+  `text`), action on tap, sliders for lights, colours and glow brightness, size and rotation.
+  Each colour has a **Reset** button; **Reset colours** clears them all.
+- **Appearance** in the left menu: glow brightness for all buttons and the glow colour (Auto = the
+  light's own colour).
 
 ## Configuration
 
@@ -105,6 +113,7 @@ fit: true                   # scale the plan to fit the screen (default true)
 theme: light                # light | dark | auto (follow Home Assistant), default light
 zoom: 1                     # start zoom 0.5-3, used when fit is off
 glow_color: auto            # or any CSS colour
+glow_opacity: 100           # glow brightness 0-100 % for all buttons (default 100)
 show_controls: true         # buttons on the card (default true)
 dim_after: 120              # wall panel: dim after this many seconds without a touch (0 = never)
 home_presets: true          # "Turn everything off" and "All lights on" with the scenes (default true)
@@ -114,6 +123,12 @@ buttons:
     style: label            # label | hotspot | text (default label)
     tap_action: toggle      # toggle | more-info | sliders | ha-info | none (default toggle)
     sliders: true           # lights: long-press opens brightness/colour sliders
+    color: '#ffffff'        # optional colours: text, background, border,
+    bg_color: '#1e3a8a'     # glow when on and background when on
+    border_color: '#f59e0b'
+    on_color: '#22c55e'
+    on_bg_color: '#16a34a'
+    glow_opacity: 70        # this button's glow brightness (default: the card's)
     rotate: 0               # degrees
     x: 72.0                 # left edge, % of the image width
     y: 58.0                 # top edge, % of the image height
