@@ -5,8 +5,96 @@ import {
   clampZoom, dropRect, resolveTheme, groupOf, fitZoom, replaceCard,
   normRotate, lightCaps, brightnessPct, hueOf, lightCall, angleTo, roomOf, roomMembers,
   roomParts, sharedEdge, mergeRooms, resizeEdge, placedAt, fitFont, haSummary, fmtBytes, starterConfig,
-  scanDevices,
+  scanDevices, roomCall, allOffTargets, sensorText, autoPlace, mediaInfo, pushHistory,
 } from '../dist/gh-dash.js';
+
+const S = (entity_id, state, attributes = {}) => ({ entity_id, state, attributes });
+
+test('roomCall: turn off everything controllable, turn on only lights', () => {
+  const ids = ['light.a', 'switch.b', 'media_player.tv', 'sensor.t', 'binary_sensor.d', 'scene.film', 'fan.f'];
+  assert.deepEqual(roomCall(ids, 'off'), { domain: 'homeassistant', service: 'turn_off',
+    data: { entity_id: ['light.a', 'switch.b', 'media_player.tv', 'fan.f'] } });
+  assert.deepEqual(roomCall(ids, 'on'), { domain: 'light', service: 'turn_on', data: { entity_id: ['light.a'] } });
+  assert.equal(roomCall(['sensor.t'], 'off'), null);
+});
+
+test('allOffTargets: every placed device that can be turned off, once', () => {
+  const buttons = [{ entity: 'light.a' }, { entity: 'light.a' }, { entity: 'switch.b' }, { label: 'text' },
+    { entity: 'sensor.t' }, { entity: 'scene.x' }, { entity: 'input_boolean.y' }];
+  assert.deepEqual(allOffTargets(buttons), ['light.a', 'switch.b', 'input_boolean.y']);
+});
+
+test('groupOf / scanDevices: sensors and scenes get their own groups; only useful sensors are listed', () => {
+  assert.equal(groupOf('scene.film'), 'scenes');
+  assert.equal(groupOf('script.godnatt'), 'scenes');
+  assert.equal(groupOf('binary_sensor.door'), 'sensors');
+  const states = {
+    'sensor.temp': S('sensor.temp', '21.5', { device_class: 'temperature', unit_of_measurement: '°C', friendly_name: 'Temp' }),
+    'sensor.hum': S('sensor.hum', '45', { device_class: 'humidity', unit_of_measurement: '%', friendly_name: 'Fukt' }),
+    'sensor.power': S('sensor.power', '3', { device_class: 'power', friendly_name: 'Effekt' }),
+    'binary_sensor.door': S('binary_sensor.door', 'off', { device_class: 'door', friendly_name: 'Ytterdörr' }),
+    'binary_sensor.update': S('binary_sensor.update', 'off', { device_class: 'update', friendly_name: 'Upd' }),
+    'scene.film': S('scene.film', 'scening', { friendly_name: 'Film' }),
+  };
+  const r = scanDevices(states, {}, {}, {});
+  assert.deepEqual(r.groups.sensors.map((d) => d.id), ['sensor.hum', 'sensor.temp', 'binary_sensor.door'].sort((a, b) =>
+    ({ 'sensor.hum': 'Fukt', 'sensor.temp': 'Temp', 'binary_sensor.door': 'Ytterdörr' })[a]
+      .localeCompare(({ 'sensor.hum': 'Fukt', 'sensor.temp': 'Temp', 'binary_sensor.door': 'Ytterdörr' })[b])));
+  assert.deepEqual(r.groups.scenes.map((d) => d.id), ['scene.film']);
+  assert.equal(r.total, 4);
+});
+
+test('sensors: value text, binary sensors count as "on" when open/detected, scenes are activated', () => {
+  assert.equal(sensorText(S('sensor.t', '21.46', { device_class: 'temperature', unit_of_measurement: '°C' }), 'sv'), '21,5 °C');
+  assert.equal(sensorText(S('sensor.t', '21.46', { device_class: 'temperature', unit_of_measurement: '°C' }), 'en'), '21.5 °C');
+  assert.equal(sensorText(S('sensor.h', '45', { device_class: 'humidity', unit_of_measurement: '%' }), 'sv'), '45 %');
+  assert.equal(sensorText(S('sensor.h', 'unavailable', {}), 'sv'), '–');
+  assert.equal(isOn(S('binary_sensor.door', 'on', { device_class: 'door' })), true);
+  assert.deepEqual(toggleCall('scene.film'), { domain: 'scene', service: 'turn_on', data: { entity_id: 'scene.film' } });
+  assert.deepEqual(toggleCall('script.godnatt'), { domain: 'script', service: 'turn_on', data: { entity_id: 'script.godnatt' } });
+});
+
+test('autoPlace: devices whose HA area matches a room name are placed inside that room', () => {
+  const rooms = [{ name: 'Sovrum 3', x: 40, y: 20, w: 20, h: 20 }, { name: 'Kök', parts: [{ x: 70, y: 20, w: 10, h: 10 }] }];
+  const devices = [
+    { id: 'light.a', name: 'A', area: 'sovrum 3' },   // case-insensitive
+    { id: 'light.b', name: 'B', area: 'Sovrum 3' },
+    { id: 'light.c', name: 'C', area: 'Kök' },
+    { id: 'light.d', name: 'D', area: 'Garage' },     // no such room
+    { id: 'light.e', name: 'E', area: 'Kök' },        // already placed -> skipped
+  ];
+  const added = autoPlace(rooms, devices, [{ entity: 'light.e', x: 1, y: 1, w: 8, h: 3 }]);
+  assert.deepEqual(added.map((b) => b.entity), ['light.a', 'light.b', 'light.c']);
+  added.forEach((b) => assert.ok(roomOf(rooms, b) >= 0, `${b.entity} inside a room`));
+  assert.equal(roomOf(rooms, added[0]), 0);
+  assert.equal(roomOf(rooms, added[2]), 1);
+  assert.notDeepEqual([added[0].x, added[0].y], [added[1].x, added[1].y]); // not on top of each other
+});
+
+test('mediaInfo: title, artist, volume and which controls the player supports', () => {
+  const tv = S('media_player.tv', 'playing', { media_title: 'Nyheterna', media_artist: 'SVT', volume_level: 0.35,
+    entity_picture: '/api/media_player_proxy/media_player.tv?token=x', supported_features: 1 | 4 | 16 | 32 | 16384 });
+  assert.deepEqual(mediaInfo(tv), { title: 'Nyheterna', artist: 'SVT', picture: '/api/media_player_proxy/media_player.tv?token=x',
+    volume: 35, playing: true, canPlayPause: true, canVolume: true, canPrev: true, canNext: true });
+  const plain = mediaInfo(S('media_player.x', 'off', { supported_features: 256 }));
+  assert.equal(plain.canPlayPause || plain.canVolume || plain.canPrev || plain.canNext, false);
+});
+
+test('a scene that has never been activated ("unknown") can still be used', () => {
+  assert.equal(isUnavailable(S('scene.film', 'unknown')), false);
+  assert.equal(isUnavailable(S('script.x', 'unknown')), false);
+  assert.equal(isUnavailable(S('scene.film', 'unavailable')), true);
+  assert.equal(isUnavailable(S('light.a', 'unknown')), true);
+});
+
+test('pushHistory keeps the last N snapshots', () => {
+  let h = [];
+  for (let i = 0; i < 60; i += 1) h = pushHistory(h, `s${i}`, 50);
+  assert.equal(h.length, 50);
+  assert.equal(h[0], 's10');
+  assert.equal(h[49], 's59');
+  assert.deepEqual(pushHistory(['a'], 'a', 50), ['a']); // same as the last one: not added twice
+});
 
 test('scanDevices groups the devices Home Assistant has, with their area, skipping hidden ones', () => {
   const st = (id, name) => [id, { entity_id: id, state: 'off', attributes: { friendly_name: name } }];
@@ -268,7 +356,8 @@ test('groupOf sorts devices into palette groups', () => {
   assert.equal(groupOf('input_boolean.x'), 'switches');
   assert.equal(groupOf('media_player.tv'), 'media');
   assert.equal(groupOf('fan.f'), 'other');
-  assert.equal(groupOf('sensor.temp'), null);
+  assert.equal(groupOf('sensor.temp'), 'sensors');
+  assert.equal(groupOf('lock.door'), null);
 });
 
 const st = (entity_id, state, attributes = {}) => ({ entity_id, state, attributes });
