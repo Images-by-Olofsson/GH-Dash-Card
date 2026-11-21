@@ -7,7 +7,7 @@
  *
  * Card type: custom:gh-dash-card
  */
-const VERSION = '0.9.1';
+const VERSION = '0.10.0';
 
 // ---------------------------------------------------------------- helpers --
 
@@ -279,6 +279,25 @@ function bundledPlan() {
   }
 }
 
+/** All devices Home Assistant has that can be placed, grouped by type, with their area name. */
+export function scanDevices(states, entities, devices, areas) {
+  const groups = { lights: [], switches: [], media: [], other: [] };
+  const ents = entities || {};
+  const devs = devices || {};
+  const ars = areas || {};
+  Object.keys(states || {}).forEach((id) => {
+    const g = groupOf(id);
+    if (!g) return;
+    const reg = ents[id] || {};
+    if (reg.hidden) return;
+    const areaId = reg.area_id || (reg.device_id && devs[reg.device_id] && devs[reg.device_id].area_id) || '';
+    const area = (areaId && ars[areaId] && ars[areaId].name) || '';
+    groups[g].push({ id, name: String(states[id].attributes.friendly_name || id), area });
+  });
+  Object.values(groups).forEach((list) => list.sort((a, b) => a.name.localeCompare(b.name)));
+  return { groups, total: Object.values(groups).reduce((n, list) => n + list.length, 0) };
+}
+
 /** Indexes of the plan items that use this entity (a device should be on the plan once). */
 export function placedAt(buttons, entityId) {
   if (!entityId) return [];
@@ -372,6 +391,8 @@ const TEXTS = {
     rot_hint: 'Rotate: drag the round handle above the selected box (Shift = 15° steps).',
     add_room: '+ Room', new_room: 'Room', room_name: 'Room name', in_room: 'Room', no_room: 'not in a room',
     hotspots_converted: 'New plan: {n} invisible click areas became visible labels.',
+    scan: 'Scan for devices', scan_hint: 'Press "Scan for devices" to list every device in Home Assistant, then drag one onto the plan.',
+    found: 'Found {n} devices', devices_title: 'Devices', rescan: 'Scan again',
     'tap_ha-info': 'Show HA information', ha_title: 'Home Assistant', version: 'Version', name: 'Name',
     connection: 'Connection', connected: 'connected', reconnecting: 'reconnecting…', timezone: 'Time zone', language: 'Language',
     overview: 'Overview', entities: 'Entities', devices: 'Devices', areas: 'Areas', lights: 'Lights on',
@@ -407,6 +428,8 @@ const TEXTS = {
     rot_hint: 'Rotera: dra i det runda handtaget ovanför den valda rutan (Skift = 15°-steg).',
     add_room: '+ Rum', new_room: 'Rum', room_name: 'Rummets namn', in_room: 'Rum', no_room: 'inte i något rum',
     hotspots_converted: 'Ny plan: {n} osynliga klickytor blev synliga etiketter.',
+    scan: 'Skanna efter enheter', scan_hint: 'Tryck på "Skanna efter enheter" för att lista alla enheter i Home Assistant och dra sedan in dem på planen.',
+    found: 'Hittade {n} enheter', devices_title: 'Enheter', rescan: 'Skanna igen',
     'tap_ha-info': 'Visa HA-information', ha_title: 'Home Assistant', version: 'Version', name: 'Namn',
     connection: 'Anslutning', connected: 'ansluten', reconnecting: 'återansluter…', timezone: 'Tidszon', language: 'Språk',
     overview: 'Översikt', entities: 'Entiteter', devices: 'Enheter', areas: 'Områden', lights: 'Lampor på',
@@ -464,6 +487,7 @@ const ICONS = {
   upload: [['path', { d: 'M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4' }], ['polyline', { points: '17 8 12 3 7 8' }],
     ['line', { x1: 12, y1: 3, x2: 12, y2: 15 }]],
   home: [['path', { d: 'M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z' }], ['polyline', { points: '9 22 9 12 15 12 15 22' }]],
+  scan: [['circle', { cx: 11, cy: 11, r: 7 }], ['line', { x1: 21, y1: 21, x2: 16, y2: 16 }]],
 };
 
 /** An <svg> line icon (or null outside a browser). */
@@ -1424,7 +1448,28 @@ class GhDashCard extends Base {
 // ----------------------------------------------------------------- editor --
 
 const EDITOR_CSS = `
-  :host { display: block; }
+  :host { display: block; container-type: inline-size; }
+  .layout { display: grid; grid-template-columns: minmax(260px, 320px) 1fr; gap: 12px; align-items: start; }
+  .side { position: sticky; top: 0; max-height: 82vh; overflow: auto; display: flex; flex-direction: column; gap: 10px;
+          padding-right: 2px; overscroll-behavior: contain; }
+  .main { min-width: 0; }
+  @container (max-width: 760px) { .layout { grid-template-columns: 1fr; } .side { position: static; max-height: none; order: 2; } }
+  .scanner { border: 1px solid var(--divider-color, #ccc); border-radius: 8px; padding: 8px; }
+  .scanner h4 { margin: 0 0 8px; font-size: .95rem; }
+  .scanner .scanbtn { width: 100%; justify-content: center; margin-bottom: 8px; }
+  .scanner .count { font-size: .8rem; color: var(--secondary-text-color); margin: 4px 0 6px; }
+  .scanner input[type=search] { width: 100%; box-sizing: border-box; }
+  .side .chips { flex-direction: column; flex-wrap: nowrap; gap: 4px; }
+  .side .chip { border-radius: 8px; display: flex; flex-direction: column; align-items: flex-start; }
+  .chip .ar { font-size: .72rem; color: var(--secondary-text-color); }
+  .side .panel { margin-top: 0; }
+  .side .nums { grid-template-columns: repeat(2, 1fr); }
+  .side { overflow-x: hidden; }
+  .side .row, .side label { min-width: 0; }
+  .side input, .side select { width: 100%; box-sizing: border-box; min-width: 0; }
+  .side input[type=checkbox] { width: 18px; }
+  .side .grid2 { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+  .side .nums { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
   .row { display: flex; flex-direction: column; gap: 4px; margin-bottom: 10px; }
   .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
   label { display: flex; flex-direction: column; gap: 4px; font-size: .85rem; color: var(--secondary-text-color); }
@@ -1492,7 +1537,7 @@ const EDITOR_CSS = `
   .palette { border: 1px solid var(--divider-color, #ccc); border-radius: 8px; padding: 8px; margin: 8px 0; }
   .palette h4 { margin: 0 0 6px; font-size: .9rem; font-weight: 600; color: var(--primary-text-color); }
   .palette .grp { font-size: .78rem; text-transform: uppercase; letter-spacing: .04em; color: var(--secondary-text-color); margin: 8px 0 4px; }
-  .palette .list { max-height: 170px; overflow: auto; }
+  .palette .list { max-height: none; overflow: visible; }
   .chips { display: flex; flex-wrap: wrap; gap: 6px; }
   .chip { touch-action: none; user-select: none; -webkit-user-select: none; cursor: grab; padding: 5px 10px; border-radius: 14px;
           border: 1px solid var(--divider-color, #ccc); background: var(--secondary-background-color, #f3f4f7);
@@ -1599,8 +1644,16 @@ class GhDashCardEditor extends Base {
     hint.textContent = L('drag_hint');
     root.appendChild(hint);
 
-    root.appendChild(this._palette());
-    root.appendChild(this._tools(L));
+    const layout = document.createElement('div');
+    layout.className = 'layout';
+    const side = document.createElement('div');
+    side.className = 'side';
+    const main = document.createElement('div');
+    main.className = 'main';
+    layout.appendChild(side);
+    layout.appendChild(main);
+    root.appendChild(layout);
+    main.appendChild(this._tools(L));
 
     const wrap = document.createElement('div');
     wrap.className = 'wrap';
@@ -1617,14 +1670,18 @@ class GhDashCardEditor extends Base {
     this._mergeButtons(stage);
     this._config.buttons.forEach((b, i) => stage.appendChild(this._box(b, i)));
     wrap.appendChild(stage);
-    root.appendChild(wrap);
+    main.appendChild(wrap);
     this._wrap = wrap;
     this._stage = stage;
     this._wireStage(wrap, stage);
     this._layout();
 
+    // left menu: the selected item's settings on top, the device scanner below
     const panel = this._panel(L);
-    if (panel) root.appendChild(panel);
+    if (panel) side.appendChild(panel);
+    side.appendChild(this._palette());
+    if (this._sideScroll) side.scrollTop = this._sideScroll;
+    side.addEventListener('scroll', () => { this._sideScroll = side.scrollTop; });
   }
 
   /** Size the plan: the wrap is as tall as the plan at 100 % (max 70 % of the window); zoom scrolls inside. */
@@ -1834,11 +1891,29 @@ class GhDashCardEditor extends Base {
 
   _palette() {
     const L = (k) => t(this._lang(), k);
-    const wrap = document.createElement('div');
-    wrap.className = 'palette';
+    const box = document.createElement('div');
+    box.className = 'palette scanner';
     const h = document.createElement('h4');
-    h.textContent = L('palette');
-    wrap.appendChild(h);
+    h.textContent = L('devices_title');
+    box.appendChild(h);
+    const scan = document.createElement('button');
+    scan.type = 'button';
+    scan.className = 'act scanbtn';
+    setContent(scan, 'scan', this._scanned ? L('rescan') : L('scan'), 16);
+    scan.addEventListener('click', () => { this._scanned = this._scanStates(); this._render(); });
+    box.appendChild(scan);
+    if (!this._scanned) {
+      const hint = document.createElement('div');
+      hint.className = 'hint';
+      hint.textContent = L('scan_hint');
+      box.appendChild(hint);
+      return box;
+    }
+    const res = this._scanned;
+    const count = document.createElement('div');
+    count.className = 'count';
+    count.textContent = L('found').replace('{n}', String(res.total));
+    box.appendChild(count);
     const search = document.createElement('input');
     search.type = 'search';
     search.placeholder = L('search');
@@ -1847,38 +1922,47 @@ class GhDashCardEditor extends Base {
     list.className = 'list';
     const fill = () => {
       list.textContent = '';
-      const states = (this._hass && this._hass.states) || {};
       const placed = new Set(this._config.buttons.map((b) => b.entity));
       const q = this._search.trim().toLowerCase();
-      const ents = (this._hass && this._hass.entities) || {};
       ['lights', 'switches', 'media', 'other'].forEach((g) => {
-        const ids = Object.keys(states).filter((id) => groupOf(id) === g && !(ents[id] && ents[id].hidden))
-          .filter((id) => !q || id.toLowerCase().includes(q) || String(states[id].attributes.friendly_name || '').toLowerCase().includes(q))
-          .sort((a, b) => String(states[a].attributes.friendly_name || a).localeCompare(String(states[b].attributes.friendly_name || b)));
-        if (!ids.length) return;
+        const items = res.groups[g].filter((d) => !q || d.id.toLowerCase().includes(q)
+          || d.name.toLowerCase().includes(q) || d.area.toLowerCase().includes(q));
+        if (!items.length) return;
         const gh = document.createElement('div');
         gh.className = 'grp';
-        gh.textContent = L(`g_${g}`);
+        gh.textContent = `${L(`g_${g}`)} (${items.length})`;
         list.appendChild(gh);
         const chips = document.createElement('div');
         chips.className = 'chips';
-        ids.forEach((id) => chips.appendChild(this._chip(id, states[id].attributes.friendly_name || id, placed.has(id))));
+        items.forEach((d) => chips.appendChild(this._chip(d.id, d.name, placed.has(d.id), d.area)));
         list.appendChild(chips);
       });
     };
     search.addEventListener('input', () => { this._search = search.value; fill(); });
-    wrap.appendChild(search);
-    wrap.appendChild(list);
+    box.appendChild(search);
+    box.appendChild(list);
     fill();
-    return wrap;
+    return box;
   }
 
-  _chip(entityId, name, placed) {
+  /** Read every placeable device from the live Home Assistant data (the 'scan'). */
+  _scanStates() {
+    const h = this._hass || {};
+    return scanDevices(h.states, h.entities, h.devices, h.areas);
+  }
+
+  _chip(entityId, name, placed, area) {
     const L = (k) => t(this._lang(), k);
     const chip = document.createElement('div');
     chip.className = `chip${placed ? ' placed' : ''}`;
     chip.textContent = name;
     chip.title = entityId;
+    if (area) {
+      const ar = document.createElement('span');
+      ar.className = 'ar';
+      ar.textContent = area;
+      chip.appendChild(ar);
+    }
     if (placed) {
       const s = document.createElement('small');
       s.textContent = `(${L('placed')})`;

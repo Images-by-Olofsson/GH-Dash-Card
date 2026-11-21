@@ -53,10 +53,14 @@ Use the pencil button in the card's top-right bar (shown to Home Assistant admin
 **Cancel** and **Save** in the bottom-right corner; Save writes the layout into the dashboard.
 Dashboards in YAML mode cannot be saved this way - copy the YAML from the card editor instead.
 
-- **Devices list**: lights, plugs and switches, TVs and media players and other devices from your
-  Home Assistant, with search. Drag one onto the plan. A device that is already on the plan is
-  moved instead of copied; a device placed twice is marked and can be removed.
-- **Click** an item or a room to edit it, click again (or an empty spot) to close.
+Edit mode has a **menu on the left** of the plan (below it on narrow screens): the settings of the
+selected item on top, the device list below.
+
+- **Scan for devices** lists every device in your Home Assistant that can be placed - lights, plugs
+  and switches, TVs and media players and others - grouped by type, with its area, and searchable.
+  Drag one onto the plan. A device that is already on the plan is moved instead of copied; a device
+  placed twice is marked and can be removed. Press **Scan again** after adding devices to Home Assistant.
+- **Click** an item or a room to edit it in the left menu, click again (or an empty spot) to close.
   **Remove** appears in the toolbar while something is selected; the Delete key works too.
 - **Move** by dragging, **resize** with the corner handle, **rotate** with the round handle above
   the selected item (hold Shift for 15 degree steps).
