@@ -7,7 +7,7 @@
  *
  * Card type: custom:gh-dash-card
  */
-const VERSION = '0.14.0';
+const VERSION = '0.15.0';
 
 // ---------------------------------------------------------------- helpers --
 
@@ -365,6 +365,72 @@ export function roomCall(entityIds, mode) {
   return ids.length ? { domain: 'homeassistant', service: 'turn_off', data: { entity_id: ids } } : null;
 }
 
+/** Domains the room list shows an on/off switch for (besides the toggle domains). */
+const SWITCH_DOMAINS = new Set(['cover', 'humidifier', 'siren']);
+
+/**
+ * What the room list shows for a device: `toggle` (an on/off switch), `on`, and `slider`
+ * ({ kind: 'brightness' | 'percentage' | 'volume' | 'position', value: 0..100 }) or null.
+ */
+export function roomControl(stateObj) {
+  const id = String((stateObj && stateObj.entity_id) || '');
+  const dom = id.split('.')[0];
+  const a = (stateObj && stateObj.attributes) || {};
+  const unav = isUnavailable(stateObj);
+  const out = { toggle: TOGGLE_DOMAINS.has(dom) || SWITCH_DOMAINS.has(dom), on: false, slider: null };
+  if (dom === 'cover') {
+    out.on = !unav && (stateObj.state === 'open' || stateObj.state === 'opening');
+    if (!unav && a.current_position !== undefined && a.current_position !== null) {
+      out.slider = { kind: 'position', value: clamp(Math.round(num(a.current_position, 0)), 0, 100) };
+    }
+    return out;
+  }
+  out.on = out.toggle && isOn(stateObj);
+  if (unav) return out;
+  const feat = num(a.supported_features, 0);
+  if (dom === 'light' && lightCaps(stateObj).brightness) {
+    out.slider = { kind: 'brightness', value: brightnessPct(stateObj) };
+  } else if (dom === 'fan' && ((a.percentage !== undefined && a.percentage !== null) || (feat & 1))) {
+    out.slider = { kind: 'percentage', value: isOn(stateObj) ? clamp(Math.round(num(a.percentage, 0)), 0, 100) : 0 };
+  } else if (dom === 'media_player' && (feat & 4) && isOn(stateObj)) {
+    out.slider = { kind: 'volume', value: clamp(Math.round(num(a.volume_level, 0) * 100), 0, 100) };
+  }
+  return out;
+}
+
+/** The service call for a room-list switch: turn the device on (true) or off (false). */
+export function roomSwitchCall(entityId, on) {
+  const dom = String(entityId).split('.')[0];
+  const data = { entity_id: entityId };
+  if (dom === 'cover') return { domain: 'cover', service: on ? 'open_cover' : 'close_cover', data };
+  const domain = TOGGLE_DOMAINS.has(dom) || SWITCH_DOMAINS.has(dom) ? dom : 'homeassistant';
+  return { domain, service: on ? 'turn_on' : 'turn_off', data };
+}
+
+/** The service call for a room-list slider (value 0..100). Brightness 0 turns the light off. */
+export function roomSliderCall(entityId, kind, value) {
+  const v = clamp(Math.round(num(value, 0)), 0, 100);
+  const data = { entity_id: entityId };
+  if (kind === 'brightness') return v === 0 ? { domain: 'light', service: 'turn_off', data } : lightCall(entityId, { brightness: v });
+  if (kind === 'percentage') return { domain: 'fan', service: 'set_percentage', data: { ...data, percentage: v } };
+  if (kind === 'volume') return { domain: 'media_player', service: 'volume_set', data: { ...data, volume_level: v / 100 } };
+  if (kind === 'position') return { domain: 'cover', service: 'set_cover_position', data: { ...data, position: v } };
+  return null;
+}
+
+/** A room's devices split for the room list: controllable devices first, then sensors; each entity once. */
+export function roomListItems(entityIds) {
+  const seen = new Set();
+  const devices = [];
+  const sensors = [];
+  (entityIds || []).forEach((e) => {
+    if (!e || seen.has(e) || isPreset(e)) return;
+    seen.add(e);
+    (isSensor(e) ? sensors : devices).push(e);
+  });
+  return { devices, sensors };
+}
+
 /** Every placed device that can be turned off, each once. */
 export function allOffTargets(buttons) {
   const out = [];
@@ -582,6 +648,8 @@ const TEXTS = {
     no_image: 'Set a floor-plan image in the card settings.', drag_hint: 'Drag a device from the list onto the plan. Click a box to edit it (click again to close). Drag to move, corner to resize, round handle to rotate. Mouse wheel zooms, drag an empty spot to move the plan.',
     st_hotspot: 'Hotspot (label is in the image)', st_label: 'Label (card draws the box)',
     tap_toggle: 'Turn on/off', 'tap_more-info': 'Show details', tap_none: 'Nothing', select_hint: 'Click a box on the plan to edit it.',
+    rc_brightness: 'Brightness', rc_percentage: 'Speed', rc_volume: 'Volume', rc_position: 'Position',
+    room_close: 'Close', room_empty: 'No devices in this room yet.',
     appearance: 'Appearance', glow_op: 'Glow brightness', glow_op_all: 'Glow brightness (all buttons)',
     glow_col: 'Glow colour', auto_col: 'Auto (the light\'s own colour)', colors: 'Colours', c_text: 'Text',
     c_bg: 'Background', c_border: 'Border', c_on: 'Glow when on', c_on_bg: 'Background when on',
@@ -633,6 +701,8 @@ const TEXTS = {
     no_image: 'Ange en bild på planlösningen i kortets inställningar.', drag_hint: 'Dra en enhet från listan till planen. Klicka på en ruta för att ändra den (klicka igen för att stänga). Dra för att flytta, hörnet för att ändra storlek, runda handtaget för att rotera. Mushjulet zoomar, dra i en tom yta för att flytta planen.',
     st_hotspot: 'Klickyta (etiketten finns i bilden)', st_label: 'Etikett (kortet ritar rutan)',
     tap_toggle: 'Slå på/av', 'tap_more-info': 'Visa detaljer', tap_none: 'Ingenting', select_hint: 'Klicka på en ruta på planen för att ändra den.',
+    rc_brightness: 'Ljusstyrka', rc_percentage: 'Hastighet', rc_volume: 'Volym', rc_position: 'Läge',
+    room_close: 'Stäng', room_empty: 'Inga enheter i rummet än.',
     appearance: 'Utseende', glow_op: 'Glödstyrka', glow_op_all: 'Glödstyrka (alla knappar)',
     glow_col: 'Glödfärg', auto_col: 'Auto (lampans egen färg)', colors: 'Färger', c_text: 'Text',
     c_bg: 'Bakgrund', c_border: 'Kant', c_on: 'Glöd när på', c_on_bg: 'Bakgrund när på',
@@ -818,6 +888,45 @@ const CARD_CSS = `
   .preset.fired { animation: gh-fired .9s ease-out; }
   ha-card.dark .preset { background: #1f2530; color: #e6e9ef; }
   ha-card.dark .preset:hover { background: color-mix(in srgb, var(--pc) 18%, #1f2530); }
+  .rbox[hidden] { display: none; }
+  .rbox .sh .x { all: unset; cursor: pointer; display: inline-flex; padding: 4px; margin: -4px -4px -4px 0; border-radius: 6px; color: inherit; }
+  .rbox .sh .x:hover { background: color-mix(in srgb, currentColor 10%, transparent); }
+  .rbox .sh .x:focus-visible { outline: 2px solid var(--primary-color, #03a9f4); }
+  .rrows { display: flex; flex-direction: column; }
+  .rrow { display: grid; grid-template-columns: 32px minmax(0, 1fr) auto; align-items: center; gap: 6px 10px; padding: 8px 2px;
+          border-top: 1px solid var(--divider-color, #eef0f3); }
+  .rrow:first-child { border-top: none; padding-top: 2px; }
+  ha-card.dark .rrow { border-color: #262d38; }
+  .rrow .ric { all: unset; box-sizing: border-box; width: 32px; height: 32px; border-radius: 50%; display: inline-flex; align-items: center;
+               justify-content: center; cursor: pointer; color: #8a94a6; background: color-mix(in srgb, #8a94a6 15%, transparent); transition: color .3s, background-color .3s; }
+  .rrow.on .ric { color: var(--rc, var(--state-light-active-color, #f5a623)); background: color-mix(in srgb, var(--rc, var(--state-light-active-color, #f5a623)) 20%, transparent); }
+  .rrow .rn { all: unset; min-width: 0; cursor: pointer; display: flex; flex-direction: column; }
+  .rrow .rn b { font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .rrow .rn small { opacity: .7; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .rrow .rn:focus-visible, .rrow .ric:focus-visible { outline: 2px solid var(--primary-color, #03a9f4); border-radius: 6px; }
+  .rrow.unavailable { opacity: .55; }
+  .rrow .rsl { grid-column: 2 / 4; display: flex; align-items: center; gap: 8px; }
+  .rrow .rsl input { flex: 1; min-width: 0; height: 28px; margin: 0; accent-color: var(--primary-color, #03a9f4); cursor: pointer; }
+  .rrow .rsl span { font-size: .75rem; min-width: 38px; text-align: right; opacity: .8; font-variant-numeric: tabular-nums; }
+  .sw { all: unset; box-sizing: border-box; flex: none; width: 46px; height: 28px; border-radius: 14px; background: #c9ced6;
+        position: relative; cursor: pointer; transition: background-color .2s; }
+  .sw::after { content: ''; position: absolute; top: 3px; left: 3px; width: 22px; height: 22px; border-radius: 50%; background: #fff;
+               box-shadow: 0 1px 2px rgba(0, 0, 0, .3); transition: transform .2s; }
+  .sw[aria-checked="true"] { background: var(--primary-color, #03a9f4); }
+  .sw[aria-checked="true"]::after { transform: translateX(18px); }
+  .sw:disabled { opacity: .4; cursor: not-allowed; }
+  .sw:focus-visible { outline: 2px solid var(--primary-color, #03a9f4); outline-offset: 2px; }
+  ha-card.dark .sw { background: #3a4250; }
+  ha-card.dark .sw[aria-checked="true"] { background: var(--primary-color, #03a9f4); }
+  .rbox .rsens { margin-top: 6px; padding-top: 6px; border-top: 1px dashed var(--divider-color, #e3e6ea); }
+  ha-card.dark .rbox .rsens { border-color: #2a313d; }
+  .rbox .rempty { opacity: .7; font-size: .85rem; }
+  .racts { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+  .racts button { all: unset; box-sizing: border-box; display: inline-flex; align-items: center; gap: 4px; cursor: pointer; padding: 6px 10px;
+                  border-radius: 8px; font-size: .8rem; border: 1px solid var(--divider-color, #d5d9df); }
+  .racts button:hover { background: color-mix(in srgb, var(--primary-color, #03a9f4) 10%, transparent); }
+  .racts button:focus-visible { outline: 2px solid var(--primary-color, #03a9f4); }
+  ha-card.dark .racts button { border-color: #3a4250; }
   .srows { display: flex; flex-direction: column; }
   .srow { all: unset; box-sizing: border-box; display: flex; align-items: center; gap: 10px; padding: 8px 4px; cursor: pointer;
           border-top: 1px solid var(--divider-color, #eceef1); -webkit-tap-highlight-color: transparent; --sc: var(--primary-color, #03a9f4); }
@@ -1200,7 +1309,9 @@ class GhDashCard extends Base {
     const home = this._config.home_presets && allOffTargets(this._config.buttons).length > 0;
     this._presetEls = [];
     this._sensorRows = [];
-    if (!scenes.length && !sensors.length && !home) return null;
+    this._roomBox = null;
+    this._roomBoxKey = null;
+    if (!scenes.length && !sensors.length && !home && !this._config.rooms.length) return null;
     const side = document.createElement('div');
     side.className = 'side';
     const section = (icon, title, count) => {
@@ -1261,6 +1372,15 @@ class GhDashCard extends Base {
         this._hass.callService(c.domain, c.service, c.data);
       }));
       sec.appendChild(grid);
+    }
+    if (this._config.rooms.length) {
+      // the tapped room's devices with switches and sliders; filled in by _updateRoomBox()
+      const sec = document.createElement('section');
+      sec.className = 'sbox rbox';
+      sec.hidden = true;
+      sec.setAttribute('aria-live', 'polite');
+      side.appendChild(sec);
+      this._roomBox = sec;
     }
     if (sensors.length) {
       const sec = section('gauge', L('sensors_title'), sensors.length);
@@ -1662,8 +1782,203 @@ class GhDashCard extends Base {
       return t(lang, on ? 'bs_open' : 'bs_closed');
     }
     if (ACTIVATE_DOMAINS.has(dom)) return '';
+    if (dom === 'cover') return t(lang, s.state === 'open' || s.state === 'opening' ? 'bs_open' : 'bs_closed');
     if (dom === 'media_player' && s.state === 'playing' && s.attributes.media_title) return `${t(lang, 'playing')} ${s.attributes.media_title}`;
     return isOn(s) ? t(lang, 'on') : t(lang, 'off');
+  }
+
+  /** The room list on the side: rebuilt when the room or its rows' kind change, else only the values are synced. */
+  _updateRoomBox(members, lang) {
+    const box = this._roomBox;
+    if (!box) return;
+    if (members === null || this._room === null || !this._config.rooms[this._room]) {
+      box.hidden = true;
+      box.textContent = '';
+      this._roomBoxKey = null;
+      this._roomRows = [];
+      return;
+    }
+    const { devices, sensors } = roomListItems(members);
+    const ctl = devices.map((e) => roomControl(this._hass.states[e]));
+    const key = `${this._room}|${lang}|${devices.join(',')}|${sensors.join(',')}|${ctl.map((c) => (c.slider ? c.slider.kind : '-')).join(',')}`;
+    const busy = (this._roomRows || []).some((r) => r.busy && Date.now() - r.busy < 1500);
+    if (key !== this._roomBoxKey && !busy) this._buildRoomBox(devices, sensors, ctl, lang, key);
+    (this._roomRows || []).forEach((r, i) => this._syncRoomRow(r, ctl[i], lang));
+    (this._roomSensorRows || []).forEach((r) => {
+      const s = this._hass.states[r.entity];
+      const icon = sensorIcon(s, r.entity);
+      if (r.ic.dataset.ic !== icon) { setContent(r.ic, icon, '', 16); r.ic.dataset.ic = icon; r.el.className = `srow k-${icon}`; }
+      r.sv.textContent = this._stateText(s, lang);
+      r.el.classList.toggle('alert', r.entity.startsWith('binary_sensor.') && isOn(s));
+      r.el.classList.toggle('unavailable', isUnavailable(s));
+    });
+  }
+
+  _buildRoomBox(devices, sensors, ctl, lang, key) {
+    const box = this._roomBox;
+    const room = this._config.rooms[this._room];
+    const label = (e) => (this._config.buttons.find((b) => b.entity === e) || {}).label;
+    box.textContent = '';
+    box.hidden = false;
+    this._roomBoxKey = key;
+    const h = document.createElement('h4');
+    h.className = 'sh';
+    const ic = iconEl('home', 16);
+    if (ic) h.appendChild(ic);
+    const ti = document.createElement('span');
+    ti.className = 'grow';
+    ti.textContent = room.name || '';
+    h.appendChild(ti);
+    const cnt = document.createElement('span');
+    cnt.className = 'cnt';
+    cnt.textContent = String(devices.length + sensors.length);
+    h.appendChild(cnt);
+    const x = document.createElement('button');
+    x.type = 'button';
+    x.className = 'x';
+    x.title = t(lang, 'room_close');
+    x.setAttribute('aria-label', t(lang, 'room_close'));
+    setContent(x, 'close', '', 16);
+    x.addEventListener('click', () => { this._room = null; this._update(); });
+    h.appendChild(x);
+    box.appendChild(h);
+    if (!devices.length && !sensors.length) {
+      const p = document.createElement('div');
+      p.className = 'rempty';
+      p.textContent = t(lang, 'room_empty');
+      box.appendChild(p);
+    }
+    const list = document.createElement('div');
+    list.className = 'rrows';
+    this._roomRows = devices.map((e, i) => {
+      const c = ctl[i];
+      const dom = e.split('.')[0];
+      const row = document.createElement('div');
+      row.className = 'rrow';
+      const icon = document.createElement('button');
+      icon.type = 'button';
+      icon.className = 'ric';
+      setContent(icon, dom === 'light' ? 'bulb' : dom === 'media_player' ? 'play' : dom === 'cover' ? 'window' : 'power', '', 16);
+      const nameBtn = document.createElement('button');
+      nameBtn.type = 'button';
+      nameBtn.className = 'rn';
+      const nm = document.createElement('b');
+      const st = document.createElement('small');
+      nameBtn.appendChild(nm);
+      nameBtn.appendChild(st);
+      [icon, nameBtn].forEach((el) => el.addEventListener('click', () => this._moreInfo(e)));
+      row.appendChild(icon);
+      row.appendChild(nameBtn);
+      const r = { entity: e, label: label(e), row, nm, st, sw: null, input: null, val: null, kind: null, busy: 0 };
+      if (c.toggle) {
+        const sw = document.createElement('button');
+        sw.type = 'button';
+        sw.className = 'sw';
+        sw.setAttribute('role', 'switch');
+        sw.addEventListener('click', () => {
+          const now = this._hass.states[e];
+          const want = !roomControl(now).on;
+          const call = roomSwitchCall(e, want);
+          sw.setAttribute('aria-checked', String(want)); // shows at once; the next state update confirms it
+          r.swAt = Date.now();
+          setTimeout(() => this._update(), 1600); // show the real state if nothing changed
+          this._hass.callService(call.domain, call.service, call.data);
+        });
+        row.appendChild(sw);
+        r.sw = sw;
+      } else {
+        row.appendChild(document.createElement('span'));
+      }
+      if (c.slider) {
+        const wrap = document.createElement('div');
+        wrap.className = 'rsl';
+        const input = document.createElement('input');
+        input.type = 'range';
+        input.min = '0';
+        input.max = '100';
+        input.step = '1';
+        const val = document.createElement('span');
+        input.addEventListener('input', () => { r.busy = Date.now(); val.textContent = `${input.value} %`; });
+        input.addEventListener('change', () => {
+          r.busy = Date.now();
+          const call = roomSliderCall(e, r.kind, input.value);
+          if (call) this._hass.callService(call.domain, call.service, call.data);
+        });
+        wrap.appendChild(input);
+        wrap.appendChild(val);
+        row.appendChild(wrap);
+        r.input = input;
+        r.val = val;
+        r.kind = c.slider.kind;
+      }
+      list.appendChild(row);
+      return r;
+    });
+    box.appendChild(list);
+    this._roomSensorRows = [];
+    if (sensors.length) {
+      const sl = document.createElement('div');
+      sl.className = 'srows rsens';
+      sensors.forEach((e) => {
+        const el = document.createElement('button');
+        el.type = 'button';
+        el.className = 'srow';
+        const sic = document.createElement('span');
+        sic.className = 'sic';
+        const sn = document.createElement('span');
+        sn.className = 'sn';
+        const name = document.createElement('span');
+        name.textContent = this._name(e, label(e));
+        sn.appendChild(name);
+        const sv = document.createElement('span');
+        sv.className = 'sv';
+        el.appendChild(sic);
+        el.appendChild(sn);
+        el.appendChild(sv);
+        el.addEventListener('click', () => this._moreInfo(e));
+        sl.appendChild(el);
+        this._roomSensorRows.push({ entity: e, el, ic: sic, sv });
+      });
+      box.appendChild(sl);
+    }
+    const offCall = roomCall(devices, 'off');
+    const onCall = roomCall(devices, 'on');
+    if (offCall || onCall) {
+      const acts = document.createElement('div');
+      acts.className = 'racts';
+      const add = (icon, text, call) => {
+        if (!call) return;
+        const b = document.createElement('button');
+        b.type = 'button';
+        setContent(b, icon, text, 14);
+        b.addEventListener('click', () => this._hass.callService(call.domain, call.service, call.data));
+        acts.appendChild(b);
+      };
+      add('power', t(lang, 'room_off'), offCall);
+      add('bulb', t(lang, 'room_on'), onCall);
+      box.appendChild(acts);
+    }
+  }
+
+  _syncRoomRow(r, c, lang) {
+    const s = this._hass.states[r.entity];
+    const unav = isUnavailable(s);
+    r.nm.textContent = this._name(r.entity, r.label);
+    r.st.textContent = this._stateText(s, lang);
+    r.row.classList.toggle('on', c.on);
+    r.row.classList.toggle('unavailable', unav);
+    const glow = r.entity.startsWith('light.') ? glowColor(s, '') : '';
+    if (glow) r.row.style.setProperty('--rc', glow); else r.row.style.removeProperty('--rc');
+    if (r.sw) {
+      if (!(r.swAt && Date.now() - r.swAt < 1500)) r.sw.setAttribute('aria-checked', String(c.on));
+      r.sw.setAttribute('aria-label', `${r.nm.textContent}: ${c.on ? t(lang, 'on') : t(lang, 'off')}`);
+      r.sw.disabled = unav;
+    }
+    if (r.input && c.slider && !(r.busy && Date.now() - r.busy < 1500)) {
+      r.input.value = String(c.slider.value);
+      r.val.textContent = `${c.slider.value} %`;
+      r.input.setAttribute('aria-label', `${r.nm.textContent}: ${t(lang, `rc_${c.slider.kind}`)}`);
+    }
   }
 
   _renderRoomActions(members, lang) {
@@ -2231,6 +2546,7 @@ class GhDashCard extends Base {
     });
     this._infoTxt.textContent = this._room === null ? '' : this._roomText(this._config.rooms[this._room], members[this._room], lang);
     this._renderRoomActions(this._room === null ? [] : members[this._room], lang);
+    this._updateRoomBox(this._room === null ? null : members[this._room], lang);
     if (!this._fitted) { this._fitted = true; requestAnimationFrame(() => this._fitLabels()); }
     this._syncSliders();
   }

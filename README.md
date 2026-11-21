@@ -18,6 +18,11 @@ A dashboard card that shows a floor plan with your devices on top of it.
 - **Rooms**: draw room areas on the plan. A device belongs to the room its centre is in, a room is
   tinted when something in it is on, and tapping a room shows what is on there (with its sensor
   values) plus **Turn off all** and **Turn on the lights** for that room.
+- **Room panel**: tapping a room also opens a list of everything in that room on the right side of the
+  card (between the scenes and the sensors; below the plan on narrow screens): an on/off switch per
+  device and a slider where it fits - brightness for dimmable lights, volume for TVs and media players
+  that are on, speed for fans, position for blinds - plus the room's sensor values. Tap a name for
+  more information; close the list with x or by tapping the room again.
 - **Turn everything off**: the power button on the card turns off every device on the plan
   (tap twice - the first tap only arms it, so it is not pressed by mistake).
 - **Home Assistant information**: an item can show a panel with the Home Assistant version,
