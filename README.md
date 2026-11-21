@@ -5,14 +5,24 @@ A dashboard card that shows a floor plan with your devices on top of it.
 - **Tap** a device to turn it on or off (lights, plugs/switches, TVs/media players, fans, helpers).
   Everything that is on gets a soft glow (a light glows in its own colour when it has one).
 - **Long-press** (or right-click) a light with sliders enabled to change brightness, colour and
-  warm/cold white. Other devices open Home Assistant's normal details dialog.
+  warm/cold white. Long-press a TV or speaker for what is playing (title, artist, artwork),
+  previous / play-pause / next and volume. Other devices open Home Assistant's normal details dialog.
+- **Sensors**: temperature, humidity and moisture show their value on the plan; door, window,
+  motion, leak and smoke sensors glow red when open or triggered.
+- **Scenes and scripts**: tap to run them; the button flashes.
 - **Rooms**: draw room areas on the plan. A device belongs to the room its centre is in, a room is
-  tinted when something in it is on, and tapping a room shows what is on there.
+  tinted when something in it is on, and tapping a room shows what is on there (with its sensor
+  values) plus **Turn off all** and **Turn on the lights** for that room.
+- **Turn everything off**: the power button on the card turns off every device on the plan
+  (tap twice - the first tap only arms it, so it is not pressed by mistake).
 - **Home Assistant information**: an item can show a panel with the Home Assistant version,
   connection, entities, updates and (for admins) system, disk and repairs.
 - **Scale to fit**, **zoom**, **light/dark** and **full screen** buttons on the card.
-- **Edit on the card** (admins): add devices by drag and drop, move, resize and rotate them,
-  add rooms, text and labels, upload your own floor plan, then save.
+- **Wall panel** mode for a touch screen: full screen, keeps the screen on where the browser
+  allows it, and dims after a while without touches (the first touch only wakes it).
+- **Edit on the card** (admins): add devices by drag and drop or let **Place by area** put them in
+  the rooms named like their Home Assistant area, move, resize and rotate them, add rooms, text and
+  labels, upload your own floor plan, **undo** (button or Ctrl+Z), then save.
 - Swedish and English.
 
 Card type: `custom:gh-dash-card`. One JavaScript file, `dist/gh-dash.js`, no dependencies.
@@ -70,6 +80,10 @@ selected item on top, the device list below.
   **+** appears where it touches another room: click it to join the rooms into one (for example an
   L-shaped hall). Each part can still be resized on its own.
 - **+ Text** and **+ Label** add words to the plan (no device): text, size, colour, rotation.
+- **Place by area** (after a scan) puts every device whose Home Assistant area has the same name as a
+  room on the plan into that room. Sensors are listed too (temperature, humidity, doors, windows,
+  motion, leaks, smoke), and so are scenes and scripts.
+- **Undo** (toolbar or Ctrl+Z) takes back the last change; Cancel throws away everything since you opened edit mode.
 - **Upload floor plan** stores an image in Home Assistant (like the picture card does) and uses
   it as the plan. Invisible click areas made for labels drawn in the old image become visible labels.
 - Item options: label, style (`label` box, `hotspot` invisible area over a label in the image,
@@ -85,6 +99,7 @@ theme: light                # light | dark | auto (follow Home Assistant), defau
 zoom: 1                     # start zoom 0.5-3, used when fit is off
 glow_color: auto            # or any CSS colour
 show_controls: true         # buttons on the card (default true)
+dim_after: 120              # wall panel: dim after this many seconds without a touch (0 = never)
 buttons:
   - entity: light.living_room_lamp
     label: Living room lamp # optional, default = the device's name
