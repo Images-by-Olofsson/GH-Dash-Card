@@ -6,7 +6,7 @@ import {
   normRotate, lightCaps, brightnessPct, hueOf, lightCall, angleTo, roomOf, roomMembers,
   roomParts, sharedEdge, mergeRooms, resizeEdge, placedAt, fitFont, haSummary, fmtBytes, starterConfig,
   scanDevices, roomCall, allOffTargets, sensorText, autoPlace, mediaInfo, pushHistory,
-  isPreset, isSensor, sensorIcon,
+  isPreset, isSensor, sensorIcon, allOnTargets,
 } from '../dist/gh-dash.js';
 
 const S = (entity_id, state, attributes = {}) => ({ entity_id, state, attributes });
@@ -453,4 +453,17 @@ test('scenes do not belong to the room they happen to sit in', () => {
   const rooms = [{ name: 'A', x: 0, y: 0, w: 50, h: 50 }];
   const buttons = [{ entity: 'light.a', x: 10, y: 10, w: 5, h: 3 }, { entity: 'scene.film', x: 10, y: 10, w: 5, h: 3 }];
   assert.deepEqual(roomMembers(rooms, buttons), [['light.a']]);
+});
+
+test('allOnTargets lists every placed light once, nothing else', () => {
+  const buttons = [{ entity: 'light.a' }, { entity: 'switch.p' }, { entity: 'light.a' }, { entity: 'media_player.tv' },
+    { entity: 'light.b' }, { label: 'Text' }, { entity: 'scene.film' }];
+  assert.deepEqual(allOnTargets(buttons), ['light.a', 'light.b']);
+  assert.deepEqual(allOnTargets([]), []);
+  assert.deepEqual(allOnTargets(undefined), []);
+});
+
+test('the built-in "turn everything off / on" presets are on unless switched off', () => {
+  assert.equal(normalizeConfig({ image: '/x.png' }).home_presets, true);
+  assert.equal(normalizeConfig({ image: '/x.png', home_presets: false }).home_presets, false);
 });
