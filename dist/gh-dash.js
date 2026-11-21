@@ -7,7 +7,7 @@
  *
  * Card type: custom:gh-dash-card
  */
-const VERSION = '0.11.0';
+const VERSION = '0.12.0';
 
 // ---------------------------------------------------------------- helpers --
 
@@ -418,11 +418,39 @@ export function placedAt(buttons, entityId) {
   return out;
 }
 
+/** Scenes and scripts are shown as preset buttons next to the plan, not on it. */
+export function isPreset(entityId) {
+  return ACTIVATE_DOMAINS.has(String(entityId || '').split('.')[0]);
+}
+
+/** Sensors are drawn as small round icons on the plan. */
+export function isSensor(entityId) {
+  const d = String(entityId || '').split('.')[0];
+  return d === 'sensor' || d === 'binary_sensor';
+}
+
+/** The icon for a sensor, from its domain and device class. */
+export function sensorIcon(stateObj, entityId) {
+  const id = (stateObj && stateObj.entity_id) || entityId || '';
+  const dc = stateObj && stateObj.attributes ? stateObj.attributes.device_class : undefined;
+  if (id.startsWith('binary_sensor.')) {
+    if (dc === 'window') return 'window';
+    if (dc === 'door' || dc === 'garage_door' || dc === 'opening') return 'door';
+    if (dc === 'motion' || dc === 'occupancy') return 'motion';
+    if (dc === 'moisture') return 'drop';
+    if (dc === 'smoke') return 'flame';
+    return 'gauge';
+  }
+  if (dc === 'temperature') return 'thermo';
+  if (dc === 'humidity' || dc === 'moisture') return 'drop';
+  return 'gauge';
+}
+
 /** For every room, the entity ids of the devices placed inside it. */
 export function roomMembers(rooms, buttons) {
   const out = (rooms || []).map(() => []);
   (buttons || []).forEach((b) => {
-    if (!b.entity) return;
+    if (!b.entity || isPreset(b.entity)) return;
     const i = roomOf(rooms, b);
     if (i >= 0) out[i].push(b.entity);
   });
@@ -508,6 +536,8 @@ const TEXTS = {
     room_on: 'Turn on the lights', wall: 'Wall panel', wake: 'Tap to wake', play_pause: 'Play/pause', prev: 'Previous',
     next: 'Next', volume: 'Volume', nothing_playing: 'Nothing is playing', bs_open: 'open', bs_closed: 'closed',
     bs_motion: 'motion', bs_clear: 'no motion', bs_wet: 'water!', bs_dry: 'dry', bs_smoke: 'smoke!', bs_nosmoke: 'no smoke',
+    presets: 'Scenes', sensors_title: 'Sensors', presets_editor: 'Scenes and scripts (buttons next to the plan)',
+    presets_none: 'Tap a scene or script in the Devices list to add it here.', p_remove: 'Remove',
     undo: 'Undo', auto_place: 'Place by area', auto_placed: 'Placed {n} devices in rooms named like their Home Assistant area.',
     auto_none: 'No device has a Home Assistant area with the same name as a room.', g_sensors: 'Sensors', g_scenes: 'Scenes and scripts',
     scan: 'Scan for devices', scan_hint: 'Press "Scan for devices" to list every device in Home Assistant, then drag one onto the plan.',
@@ -551,6 +581,8 @@ const TEXTS = {
     room_on: 'Tänd lamporna', wall: 'Väggpanel', wake: 'Tryck för att väcka', play_pause: 'Spela/pausa', prev: 'Föregående',
     next: 'Nästa', volume: 'Volym', nothing_playing: 'Inget spelas', bs_open: 'öppen', bs_closed: 'stängd',
     bs_motion: 'rörelse', bs_clear: 'ingen rörelse', bs_wet: 'vatten!', bs_dry: 'torrt', bs_smoke: 'rök!', bs_nosmoke: 'ingen rök',
+    presets: 'Scener', sensors_title: 'Sensorer', presets_editor: 'Scener och skript (knappar bredvid planen)',
+    presets_none: 'Tryck på en scen eller ett skript i listan Enheter för att lägga till den här.', p_remove: 'Ta bort',
     undo: 'Ångra', auto_place: 'Placera efter område', auto_placed: '{n} enheter placerades i rum med samma namn som deras område i Home Assistant.',
     auto_none: 'Ingen enhet har ett område i Home Assistant med samma namn som ett rum.', g_sensors: 'Sensorer', g_scenes: 'Scener och skript',
     scan: 'Skanna efter enheter', scan_hint: 'Tryck på "Skanna efter enheter" för att lista alla enheter i Home Assistant och dra sedan in dem på planen.',
@@ -622,6 +654,14 @@ const ICONS = {
   undo: [['polyline', { points: '9 14 4 9 9 4' }], ['path', { d: 'M20 20v-7a4 4 0 0 0-4-4H4' }]],
   bulb: [['path', { d: 'M9 18h6M10 22h4M12 2a7 7 0 0 0-4 12.7V17h8v-2.3A7 7 0 0 0 12 2z' }]],
   pin: [['path', { d: 'M12 21s-7-6.1-7-11a7 7 0 1 1 14 0c0 4.9-7 11-7 11z' }], ['circle', { cx: 12, cy: 10, r: 2.5 }]],
+  thermo: [['path', { d: 'M14 14.76V3.5a2.5 2.5 0 0 0-5 0v11.26a4.5 4.5 0 1 0 5 0z' }]],
+  drop: [['path', { d: 'M12 2.69l5.66 5.66a8 8 0 1 1-11.31 0z' }]],
+  door: [['path', { d: 'M6 21V3h12v18' }], ['line', { x1: 3, y1: 21, x2: 21, y2: 21 }], ['line', { x1: 14.5, y1: 12, x2: 14.5, y2: 12.01 }]],
+  window: [['rect', { x: 4, y: 3, width: 16, height: 18, rx: 1 }], ['line', { x1: 12, y1: 3, x2: 12, y2: 21 }], ['line', { x1: 4, y1: 12, x2: 20, y2: 12 }]],
+  motion: [['polyline', { points: '22 12 18 12 15 21 9 3 6 12 2 12' }]],
+  flame: [['path', { d: 'M12 22a7 7 0 0 0 7-7c0-2-1-3.9-3-5.5s-3.5-4-4-6.5c-.5 2.5-2 4.9-4 6.5S5 13 5 15a7 7 0 0 0 7 7z' }]],
+  gauge: [['circle', { cx: 12, cy: 12, r: 9 }], ['line', { x1: 12, y1: 12, x2: 16, y2: 8 }]],
+  star: [['polygon', { points: '12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2' }]],
 };
 
 /** An <svg> line icon (or null outside a browser). */
@@ -664,7 +704,47 @@ const store = {
 
 const CARD_CSS = `
   :host { display: block; }
-  ha-card { display: block; overflow: hidden; padding: 8px; position: relative; transition: background-color .3s, color .3s; }
+  ha-card { display: block; overflow: hidden; padding: 8px; position: relative; transition: background-color .3s, color .3s;
+            container-type: inline-size; }
+  .body { display: grid; grid-template-columns: minmax(0, 1fr); gap: 12px; }
+  @container (min-width: 720px) { .body.has-side { grid-template-columns: minmax(0, 1fr) 240px; } }
+  .mainc { position: relative; min-width: 0; }
+  .side { display: flex; flex-direction: column; gap: 14px; font-size: .9rem; line-height: 1.3; min-width: 0; }
+  .side h4 { margin: 0 0 6px; font-size: .75rem; font-weight: 600; text-transform: uppercase; letter-spacing: .06em;
+             color: var(--secondary-text-color, #666); }
+  ha-card.dark .side h4 { color: #9aa3b2; }
+  .presets { display: grid; grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)); gap: 6px; }
+  .preset { all: unset; box-sizing: border-box; display: flex; align-items: center; gap: 8px; padding: 10px; min-height: 44px;
+            border-radius: 10px; cursor: pointer; background: var(--secondary-background-color, #f1f3f5);
+            color: var(--primary-text-color, #111); font-weight: 500; overflow-wrap: anywhere;
+            transition: background-color .2s; -webkit-tap-highlight-color: transparent; }
+  .preset:hover { background: color-mix(in srgb, var(--primary-color, #03a9f4) 16%, var(--secondary-background-color, #f1f3f5)); }
+  .preset:focus-visible { outline: 2px solid var(--primary-color, #03a9f4); }
+  .preset .ic { color: var(--primary-color, #03a9f4); }
+  .preset.unavailable { opacity: .5; cursor: not-allowed; }
+  .preset.fired { animation: gh-fired .9s ease-out; }
+  ha-card.dark .preset { background: #1d232c; color: #e6e9ef; }
+  .srows { display: flex; flex-direction: column; gap: 2px; }
+  .srow { all: unset; box-sizing: border-box; display: flex; align-items: center; gap: 10px; padding: 6px 8px; border-radius: 8px;
+          cursor: pointer; -webkit-tap-highlight-color: transparent; }
+  .srow:hover { background: rgba(127, 127, 127, .12); }
+  .srow:focus-visible { outline: 2px solid var(--primary-color, #03a9f4); }
+  .srow .sic { flex: none; width: 30px; height: 30px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center;
+               background: var(--secondary-background-color, #f1f3f5); color: var(--primary-color, #03a9f4); }
+  ha-card.dark .srow .sic { background: #1d232c; }
+  .srow .sn { flex: 1; min-width: 0; }
+  .srow .sn small { display: block; font-size: .75rem; color: var(--secondary-text-color, #666); }
+  .srow .sv { font-weight: 600; white-space: nowrap; }
+  .srow.alert .sic { background: var(--error-color, #e53935); color: #fff; }
+  .srow.alert .sv { color: var(--error-color, #e53935); }
+  .srow.unavailable { opacity: .55; }
+  .btn.circ { width: max(22px, 2.6cqw) !important; height: auto !important; aspect-ratio: 1; border-radius: 50%; padding: 0;
+              transform: translate(-50%, -50%); background: #fff; color: #1d6fb8; border: 1px solid #5b6576; }
+  ha-card.dark .btn.circ { background: #1d232c; color: #7cc4ff; border-color: #8a94a6; }
+  .btn.circ .si { display: flex; width: 100%; height: 100%; align-items: center; justify-content: center; }
+  .btn.circ .si svg { width: 62%; height: 62%; }
+  .btn.circ .txt { display: none; }
+  .btn.circ.alert { background: var(--error-color, #e53935); color: #fff; border-color: var(--error-color, #e53935); }
   ha-card.dark { background: #11151b; color: #e6e9ef; }
   .vp { position: relative; overflow: auto; overscroll-behavior: contain; scrollbar-width: thin; }
   .vp.pannable { cursor: grab; }
@@ -935,14 +1015,24 @@ class GhDashCard extends Base {
     }));
 
     this._btnEls = this._config.buttons.map((b) => {
+      if (isPreset(b.entity)) return null; // shown as a preset button next to the plan
       const isStatic = !b.entity && b.tap_action !== 'ha-info';
       const el = document.createElement(isStatic ? 'div' : 'button');
       if (!isStatic) el.type = 'button';
-      el.className = `btn style-${b.style}${isStatic ? ' static' : ''}`;
+      if (isSensor(b.entity)) {
+        // a small round icon centred where the item was placed
+        el.className = 'btn circ';
+        Object.assign(el.style, { left: `${b.x + b.w / 2}%`, top: `${b.y + b.h / 2}%` });
+        const si = document.createElement('span');
+        si.className = 'si';
+        el.appendChild(si);
+      } else {
+        el.className = `btn style-${b.style}${isStatic ? ' static' : ''}`;
+        Object.assign(el.style, { left: `${b.x}%`, top: `${b.y}%`, width: `${b.w}%`, height: `${b.h}%` });
+        if (b.rotate) el.style.setProperty('--rot', `${b.rotate}deg`);
+      }
       if (b.size) el.style.setProperty('--fs', String(b.size));
       if (b.color) { el.style.setProperty('--tc', b.color); el.style.setProperty('--tc-dark', b.color); }
-      Object.assign(el.style, { left: `${b.x}%`, top: `${b.y}%`, width: `${b.w}%`, height: `${b.h}%` });
-      if (b.rotate) el.style.setProperty('--rot', `${b.rotate}deg`);
       const txt = document.createElement('span');
       txt.className = 'txt';
       el.appendChild(txt);
@@ -963,9 +1053,17 @@ class GhDashCard extends Base {
     });
 
     vp.appendChild(plan);
-    card.appendChild(vp);
+    const body = document.createElement('div');
+    body.className = 'body';
+    const mainc = document.createElement('div');
+    mainc.className = 'mainc';
+    mainc.appendChild(vp);
+    body.appendChild(mainc);
+    card.appendChild(body);
     this._wirePanZoom(vp);
-    if (this._config.show_controls) card.appendChild(this._buildBar());
+    if (this._config.show_controls) mainc.appendChild(this._buildBar());
+    const side = this._buildSide();
+    if (side) { body.classList.add('has-side'); body.appendChild(side); }
     this._info = document.createElement('div');
     this._info.className = 'info';
     this._infoTxt = document.createElement('span');
@@ -985,6 +1083,97 @@ class GhDashCard extends Base {
     if (this._ro) this._ro.observe(vp);
     this._applyZoom(this._zoom, false);
     this._built = true;
+  }
+
+  /** Scenes/scripts as preset buttons and the sensors' values, next to the plan (below it on narrow screens). */
+  _buildSide() {
+    const L = (k) => t(this._lang(), k);
+    const presets = this._config.buttons.filter((b) => isPreset(b.entity));
+    const sensors = this._config.buttons.filter((b) => isSensor(b.entity));
+    this._presetEls = [];
+    this._sensorRows = [];
+    if (!presets.length && !sensors.length) return null;
+    const side = document.createElement('div');
+    side.className = 'side';
+    if (presets.length) {
+      const sec = document.createElement('section');
+      const h = document.createElement('h4');
+      h.textContent = L('presets');
+      sec.appendChild(h);
+      const grid = document.createElement('div');
+      grid.className = 'presets';
+      presets.forEach((b) => {
+        const el = document.createElement('button');
+        el.type = 'button';
+        el.className = 'preset';
+        el.addEventListener('click', () => {
+          if (!this._hass || isUnavailable(this._hass.states[b.entity])) return;
+          const c = toggleCall(b.entity);
+          this._hass.callService(c.domain, c.service, c.data);
+          el.classList.remove('fired');
+          void el.offsetWidth; // restart the animation
+          el.classList.add('fired');
+        });
+        grid.appendChild(el);
+        this._presetEls.push({ b, el });
+      });
+      sec.appendChild(grid);
+      side.appendChild(sec);
+    }
+    if (sensors.length) {
+      const sec = document.createElement('section');
+      const h = document.createElement('h4');
+      h.textContent = L('sensors_title');
+      sec.appendChild(h);
+      const list = document.createElement('div');
+      list.className = 'srows';
+      sensors.forEach((b) => {
+        const el = document.createElement('button');
+        el.type = 'button';
+        el.className = 'srow';
+        const ic = document.createElement('span');
+        ic.className = 'sic';
+        const sn = document.createElement('span');
+        sn.className = 'sn';
+        const name = document.createElement('span');
+        const room = document.createElement('small');
+        sn.appendChild(name);
+        sn.appendChild(room);
+        const sv = document.createElement('span');
+        sv.className = 'sv';
+        el.appendChild(ic);
+        el.appendChild(sn);
+        el.appendChild(sv);
+        el.addEventListener('click', () => this._moreInfo(b.entity));
+        list.appendChild(el);
+        this._sensorRows.push({ b, el, ic, name, room, sv });
+      });
+      sec.appendChild(list);
+      side.appendChild(sec);
+    }
+    return side;
+  }
+
+  _updateSide(lang) {
+    (this._presetEls || []).forEach(({ b, el }) => {
+      const s = this._hass.states[b.entity];
+      const name = this._name(b.entity, b.label);
+      const icon = b.entity.startsWith('script.') ? 'play' : 'star';
+      if (el.dataset.name !== name) { setContent(el, icon, name, 18); el.dataset.name = name; }
+      el.classList.toggle('unavailable', isUnavailable(s));
+      el.title = name;
+    });
+    (this._sensorRows || []).forEach((r) => {
+      const s = this._hass.states[r.b.entity];
+      const icon = sensorIcon(s, r.b.entity);
+      if (r.ic.dataset.ic !== icon) { setContent(r.ic, icon, '', 16); r.ic.dataset.ic = icon; }
+      r.name.textContent = this._name(r.b.entity, r.b.label);
+      const ri = roomOf(this._config.rooms, r.b);
+      r.room.textContent = ri >= 0 ? (this._config.rooms[ri].name || '') : '';
+      r.sv.textContent = this._stateText(s, lang);
+      r.el.classList.toggle('alert', r.b.entity.startsWith('binary_sensor.') && isOn(s));
+      r.el.classList.toggle('unavailable', isUnavailable(s));
+    });
   }
 
   _buildBar() {
@@ -1806,6 +1995,7 @@ class GhDashCard extends Base {
     const accent = this._config.glow_color === 'auto' ? 'var(--state-light-active-color, var(--primary-color, #ffb300))' : this._config.glow_color;
     this._config.buttons.forEach((b, i) => {
       const el = this._btnEls[i];
+      if (!el) return;
       if (!b.entity) { el.querySelector('.txt').textContent = b.label || ''; return; }
       const s = this._hass.states[b.entity];
       const dom = b.entity.split('.')[0];
@@ -1822,10 +2012,16 @@ class GhDashCard extends Base {
       const stateTxt = this._stateText(s, lang);
       el.setAttribute('aria-label', `${name}: ${stateTxt}`);
       el.title = `${name}: ${stateTxt}`;
-      let shown = name;
-      if (dom === 'sensor') shown = b.label ? `${b.label} ${sensorText(s, lang)}` : sensorText(s, lang);
-      el.querySelector('.txt').textContent = b.style === 'hotspot' ? '' : shown;
+      if (el.classList.contains('circ')) {
+        const si = el.querySelector('.si');
+        const icon = sensorIcon(s, b.entity);
+        if (si.dataset.ic !== icon) { setContent(si, icon, '', 14); si.dataset.ic = icon; }
+        el.querySelector('.txt').textContent = '';
+        return;
+      }
+      el.querySelector('.txt').textContent = b.style === 'hotspot' ? '' : name;
     });
+    this._updateSide(lang);
     const members = roomMembers(this._config.rooms, this._config.buttons);
     if (this._allOffBtn) this._allOffBtn.disabled = !allOffTargets(this._config.buttons).length;
     this._config.rooms.forEach((r, i) => {
@@ -1933,6 +2129,20 @@ const EDITOR_CSS = `
   .parts { display: flex; flex-direction: column; gap: 4px; margin: 6px 0 10px; }
   .parts .prow { display: flex; align-items: center; gap: 8px; font-size: .85rem; }
   .box:focus-visible { outline: 2px solid var(--accent-color, #ff9800); outline-offset: 2px; }
+  .box.circ { width: max(22px, 2.6cqw) !important; height: auto !important; aspect-ratio: 1; border-radius: 50%;
+              transform: translate(-50%, -50%); color: #1d6fb8; background: #fff; }
+  .box.circ.selected { background: color-mix(in srgb, var(--accent-color, #ff9800) 30%, #fff); }
+  .box.circ .grip, .box.circ .rh, .box.circ .lbl, .box.circ.selected .grip, .box.circ.selected .rh { display: none; }
+  .box.circ .si { display: flex; width: 100%; height: 100%; align-items: center; justify-content: center; pointer-events: none; }
+  .box.circ .si svg { width: 62%; height: 62%; }
+  .plist { border: 1px solid var(--divider-color, #ccc); border-radius: 8px; padding: 8px; }
+  .plist h4 { margin: 0 0 8px; font-size: .95rem; }
+  .plist .pi { display: flex; align-items: center; gap: 6px; padding: 4px 6px; border-radius: 6px; cursor: pointer; }
+  .plist .pi:hover { background: rgba(127, 127, 127, .12); }
+  .plist .pi.selected { background: color-mix(in srgb, var(--accent-color, #ff9800) 22%, transparent); }
+  .plist .pi span { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+  .plist .pi button { font: inherit; border: none; background: none; cursor: pointer; padding: 2px; color: inherit; }
+  .plist .none { font-size: .8rem; color: var(--secondary-text-color); line-height: 1.35; }
   .box .lbl { overflow: hidden; pointer-events: none; }
   .grip { position: absolute; right: -16px; bottom: -16px; width: 12px; height: 12px; cursor: nwse-resize;
           background: var(--accent-color, #ff9800); border: 2px solid #fff; border-radius: 3px; display: none; }
@@ -2118,7 +2328,7 @@ class GhDashCardEditor extends Base {
     }
     this._config.rooms.forEach((r, i) => r.parts.forEach((q, k) => stage.appendChild(this._partBox(r, i, q, k))));
     this._mergeButtons(stage);
-    this._config.buttons.forEach((b, i) => stage.appendChild(this._box(b, i)));
+    this._config.buttons.forEach((b, i) => { if (!isPreset(b.entity)) stage.appendChild(this._box(b, i)); });
     wrap.appendChild(stage);
     main.appendChild(wrap);
     this._wrap = wrap;
@@ -2129,6 +2339,7 @@ class GhDashCardEditor extends Base {
     // left menu: the selected item's settings on top, the device scanner below
     const panel = this._panel(L);
     if (panel) side.appendChild(panel);
+    side.appendChild(this._presetList(L));
     side.appendChild(this._palette());
     if (this._sideScroll) side.scrollTop = this._sideScroll;
     side.addEventListener('scroll', () => { this._sideScroll = side.scrollTop; });
@@ -2425,6 +2636,53 @@ class GhDashCardEditor extends Base {
     return box;
   }
 
+  /** The scenes and scripts shown as buttons next to the plan. */
+  _presetList(L) {
+    const box = document.createElement('div');
+    box.className = 'plist';
+    const h = document.createElement('h4');
+    h.textContent = L('presets_editor');
+    box.appendChild(h);
+    let any = false;
+    this._config.buttons.forEach((b, i) => {
+      if (!isPreset(b.entity)) return;
+      any = true;
+      const row = document.createElement('div');
+      row.className = `pi${i === this._sel ? ' selected' : ''}`;
+      row.tabIndex = 0;
+      row.setAttribute('role', 'button');
+      const ic = iconEl(b.entity.startsWith('script.') ? 'play' : 'star', 16);
+      if (ic) row.appendChild(ic);
+      const name = document.createElement('span');
+      name.textContent = this._boxLabel(b);
+      row.appendChild(name);
+      const del = document.createElement('button');
+      del.type = 'button';
+      setContent(del, 'close', '', 16);
+      del.title = L('p_remove');
+      del.setAttribute('aria-label', `${L('p_remove')}: ${name.textContent}`);
+      del.addEventListener('click', (ev) => {
+        ev.stopPropagation();
+        this._config.buttons.splice(i, 1);
+        this._sel = -1;
+        this._fire();
+        this._render();
+      });
+      row.appendChild(del);
+      const pick = () => { this._sel = this._sel === i ? -1 : i; this._selRoom = -1; this._render(); };
+      row.addEventListener('click', pick);
+      row.addEventListener('keydown', (ev) => { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); pick(); } });
+      box.appendChild(row);
+    });
+    if (!any) {
+      const none = document.createElement('div');
+      none.className = 'none';
+      none.textContent = L('presets_none');
+      box.appendChild(none);
+    }
+    return box;
+  }
+
   /** Read every placeable device from the live Home Assistant data (the 'scan'). */
   _scanStates() {
     const h = this._hass || {};
@@ -2480,6 +2738,14 @@ class GhDashCardEditor extends Base {
         chip.removeEventListener('pointercancel', onCancel);
         ghost.remove();
         this._stage.classList.remove('drop');
+        if (!cancelled && isPreset(entityId)) {
+          if (!placedAt(this._config.buttons, entityId).length) {
+            this._config.buttons.push({ entity: entityId, style: 'label', x: 0, y: 0, w: 8, h: 3 });
+            this._fire();
+          }
+          this._render();
+          return;
+        }
         if (cancelled || !over(e)) return;
         const r = this._stage.getBoundingClientRect();
         const rect = dropRect(e.clientX, e.clientY, { left: r.left, top: r.top, width: r.width, height: r.height });
@@ -2575,6 +2841,7 @@ class GhDashCardEditor extends Base {
     const dup = b.entity && placedAt(this._config.buttons, b.entity).length > 1;
     el.className = `box${b.style === 'text' ? ' text' : ''}${i === this._sel ? ' selected' : ''}${dup ? ' dup' : ''}`;
     if (dup) el.title = t(this._lang(), 'dup_warn');
+    el.dataset.i = String(i);
     el.tabIndex = 0;
     const lbl = document.createElement('span');
     lbl.className = 'lbl';
@@ -2583,8 +2850,21 @@ class GhDashCardEditor extends Base {
     el.setAttribute('role', 'button');
     el.setAttribute('aria-label', this._boxLabel(b));
     el.setAttribute('aria-pressed', String(i === this._sel));
-    this._place(el, clampRect(b));
-    if (normRotate(b.rotate)) el.style.setProperty('--rot', `${normRotate(b.rotate)}deg`);
+    const circ = isSensor(b.entity);
+    const place = (r) => {
+      if (circ) Object.assign(el.style, { left: `${r.x + r.w / 2}%`, top: `${r.y + r.h / 2}%` });
+      else this._place(el, r);
+    };
+    if (circ) {
+      el.classList.add('circ');
+      el.title = this._boxLabel(b);
+      const si = document.createElement('span');
+      si.className = 'si';
+      setContent(si, sensorIcon(this._hass && this._hass.states[b.entity], b.entity), '', 14);
+      el.appendChild(si);
+    }
+    place(clampRect(b));
+    if (!circ && normRotate(b.rotate)) el.style.setProperty('--rot', `${normRotate(b.rotate)}deg`);
     if (b.size) el.style.setProperty('--fs', String(b.size));
     if (b.color) el.style.setProperty('--tc', b.color);
     const grip = document.createElement('div');
@@ -2630,7 +2910,7 @@ class GhDashCardEditor extends Base {
         cur = mode === 'move'
           ? { ...clampRect({ ...start, x: start.x + d.dx, y: start.y + d.dy }), rotate: start.rotate }
           : { ...clampRect({ ...start, w: start.w + d.dx, h: start.h + d.dy }), rotate: start.rotate };
-        this._place(el, cur);
+        place(cur);
       };
       const up = () => {
         el.removeEventListener('pointermove', move);
@@ -2663,12 +2943,12 @@ class GhDashCardEditor extends Base {
         this._sel = i;
         this._fire();
         this._render();
-        this.shadowRoot.querySelectorAll('.box')[i]?.focus();
+        this.shadowRoot.querySelector(`.box[data-i="${i}"]`)?.focus();
       } else if (ev.key === 'Enter' || ev.key === ' ') {
         ev.preventDefault();
         this._sel = this._sel === i ? -1 : i;
         this._render();
-        this.shadowRoot.querySelectorAll('.box')[i]?.focus();
+        this.shadowRoot.querySelector(`.box[data-i="${i}"]`)?.focus();
       } else if (ev.key === 'Escape') {
         this._sel = -1;
         this._render();
@@ -2924,6 +3204,9 @@ class GhDashCardEditor extends Base {
       panel.appendChild(entRow);
     }
     panel.appendChild(this._field(device ? L('label') : L('text'), 'text', b.label || '', (v) => { b.label = v; this._fire(); this._render(); }));
+    // sensors (round icons) and scenes (preset buttons) have no style, size, rotation or box to edit
+    const simple = isSensor(b.entity) || isPreset(b.entity);
+    if (!simple) {
     const styles = device
       ? [['label', L('st_label')], ['hotspot', L('st_hotspot')], ['text', L('st_text')]]
       : [['text', L('st_text')], ['label', L('st_label')]];
@@ -2961,6 +3244,7 @@ class GhDashCardEditor extends Base {
       }));
     });
     panel.appendChild(nums);
+    }
     const del = document.createElement('button');
     del.type = 'button';
     del.className = 'act danger';
