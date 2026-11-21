@@ -8,6 +8,7 @@ import {
   scanDevices, roomCall, allOffTargets, sensorText, autoPlace, mediaInfo, pushHistory,
   isPreset, isSensor, sensorIcon, allOnTargets,
   wheelSteps, pinchZoom, clampPct, glowStrength, glowMix, COLOR_KEYS,
+  roomControl, roomSwitchCall, roomSliderCall, roomListItems,
 } from '../dist/gh-dash.js';
 
 const S = (entity_id, state, attributes = {}) => ({ entity_id, state, attributes });
@@ -504,4 +505,36 @@ test('glow strength: item setting wins, then the card, default 100; mix with tra
   assert.equal(normalizeConfig({ image: 'x' }).glow_opacity, 100);
   assert.equal(normalizeConfig({ image: 'x', glow_opacity: '55' }).glow_opacity, 55);
   assert.deepEqual(COLOR_KEYS, ['color', 'bg_color', 'border_color', 'on_color', 'on_bg_color']);
+});
+
+test('roomControl: switches and the right slider per kind of device', () => {
+  const dim = S('light.a', 'on', { supported_color_modes: ['brightness'], brightness: 128 });
+  assert.deepEqual(roomControl(dim), { toggle: true, on: true, slider: { kind: 'brightness', value: 50 } });
+  assert.deepEqual(roomControl(S('light.b', 'off', { supported_color_modes: ['onoff'] })), { toggle: true, on: false, slider: null });
+  assert.deepEqual(roomControl(S('light.c', 'off', { supported_color_modes: ['hs'] })).slider, { kind: 'brightness', value: 0 });
+  assert.deepEqual(roomControl(S('switch.p', 'on')), { toggle: true, on: true, slider: null });
+  assert.deepEqual(roomControl(S('media_player.tv', 'playing', { supported_features: 4, volume_level: 0.3 })).slider, { kind: 'volume', value: 30 });
+  assert.equal(roomControl(S('media_player.tv', 'off', { supported_features: 4 })).slider, null);
+  assert.deepEqual(roomControl(S('fan.f', 'on', { percentage: 66, supported_features: 1 })).slider, { kind: 'percentage', value: 66 });
+  assert.deepEqual(roomControl(S('cover.c', 'open', { current_position: 40 })), { toggle: true, on: true, slider: { kind: 'position', value: 40 } });
+  assert.deepEqual(roomControl(S('climate.k', 'heat')), { toggle: false, on: false, slider: null });
+  assert.deepEqual(roomControl(S('light.x', 'unavailable', { supported_color_modes: ['brightness'] })), { toggle: true, on: false, slider: null });
+});
+
+test('roomSwitchCall / roomSliderCall: the service calls', () => {
+  assert.deepEqual(roomSwitchCall('light.a', true), { domain: 'light', service: 'turn_on', data: { entity_id: 'light.a' } });
+  assert.deepEqual(roomSwitchCall('media_player.tv', false), { domain: 'media_player', service: 'turn_off', data: { entity_id: 'media_player.tv' } });
+  assert.deepEqual(roomSwitchCall('cover.c', false), { domain: 'cover', service: 'close_cover', data: { entity_id: 'cover.c' } });
+  assert.deepEqual(roomSliderCall('light.a', 'brightness', 0), { domain: 'light', service: 'turn_off', data: { entity_id: 'light.a' } });
+  assert.deepEqual(roomSliderCall('light.a', 'brightness', 42), { domain: 'light', service: 'turn_on', data: { entity_id: 'light.a', brightness_pct: 42 } });
+  assert.deepEqual(roomSliderCall('media_player.tv', 'volume', 25), { domain: 'media_player', service: 'volume_set', data: { entity_id: 'media_player.tv', volume_level: 0.25 } });
+  assert.deepEqual(roomSliderCall('fan.f', 'percentage', 150), { domain: 'fan', service: 'set_percentage', data: { entity_id: 'fan.f', percentage: 100 } });
+  assert.deepEqual(roomSliderCall('cover.c', 'position', 10), { domain: 'cover', service: 'set_cover_position', data: { entity_id: 'cover.c', position: 10 } });
+  assert.equal(roomSliderCall('x.y', 'nope', 5), null);
+});
+
+test('roomListItems: devices first, sensors apart, scenes left out, each once', () => {
+  assert.deepEqual(roomListItems(['light.a', 'sensor.t', 'light.a', 'scene.film', 'binary_sensor.d', 'switch.p']),
+    { devices: ['light.a', 'switch.p'], sensors: ['sensor.t', 'binary_sensor.d'] });
+  assert.deepEqual(roomListItems(null), { devices: [], sensors: [] });
 });
