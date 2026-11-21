@@ -9,6 +9,7 @@ import {
   isPreset, isSensor, sensorIcon, allOnTargets,
   wheelSteps, pinchZoom, clampPct, glowStrength, glowMix, COLOR_KEYS,
   roomControl, roomSwitchCall, roomSliderCall, roomListItems,
+  viewHeight,
 } from '../dist/gh-dash.js';
 
 const S = (entity_id, state, attributes = {}) => ({ entity_id, state, attributes });
@@ -329,11 +330,14 @@ test('normalizeConfig: fit defaults to true', () => {
   assert.equal(normalizeConfig({ image: '/x.png', fit: false }).fit, false);
 });
 
-test('clampZoom keeps 0.5..3 in 0.25 steps', () => {
+test('clampZoom keeps 0.5..3 in 0.1 steps without float noise', () => {
   assert.equal(clampZoom(1), 1);
   assert.equal(clampZoom(5), 3);
   assert.equal(clampZoom(0.1), 0.5);
-  assert.equal(clampZoom(1.3), 1.25);
+  assert.equal(clampZoom(1.26), 1.3);
+  assert.equal(clampZoom(0.7), 0.7);
+  assert.equal(clampZoom(0.5 + 3 * 0.1), 0.8);
+  assert.equal(clampZoom(2.94), 2.9);
   assert.equal(clampZoom('2'), 2);
   assert.equal(clampZoom(undefined), 1);
 });
@@ -480,13 +484,15 @@ test('wheelSteps: one mouse notch = one step, touchpad events add up, lines coun
   assert.equal(wheelSteps(0, -3, 1).steps, 1);
   assert.equal(wheelSteps(0, -5000).steps, 2);
   assert.equal(wheelSteps(0, 0).steps, 0);
+  assert.deepEqual(wheelSteps(-30, 100), { steps: -1, rest: 10 }); // direction change: leftover is dropped
 });
 
-test('pinchZoom: fingers apart = zoom in, together = out, limited and in 0.25 steps', () => {
+test('pinchZoom: fingers apart = zoom in, together = out, limited and in 0.1 steps', () => {
   assert.equal(pinchZoom(1, 100, 200), 2);
   assert.equal(pinchZoom(1, 100, 50), 0.5);
-  assert.equal(pinchZoom(1, 100, 112), 1);
-  assert.equal(pinchZoom(1, 100, 130), 1.25);
+  assert.equal(pinchZoom(1, 100, 104), 1);
+  assert.equal(pinchZoom(1, 100, 112), 1.1);
+  assert.equal(pinchZoom(1, 100, 130), 1.3);
   assert.equal(pinchZoom(2, 100, 1000), 3);
   assert.equal(pinchZoom(1, 0, 50), 1);
 });
@@ -537,4 +543,12 @@ test('roomListItems: devices first, sensors apart, scenes left out, each once', 
   assert.deepEqual(roomListItems(['light.a', 'sensor.t', 'light.a', 'scene.film', 'binary_sensor.d', 'switch.p']),
     { devices: ['light.a', 'switch.p'], sensors: ['sensor.t', 'binary_sensor.d'] });
   assert.deepEqual(roomListItems(null), { devices: [], sensors: [] });
+});
+
+test('viewHeight: the plan never gets taller than the space left on screen', () => {
+  assert.equal(viewHeight(120, 800), 800 - 120 - 56);       // card near the top
+  assert.equal(viewHeight(-300, 800), 800 - 56);            // page scrolled past the card top
+  assert.equal(viewHeight(700, 800), 800 - 400 - 56);       // card far down: at most half the screen above it
+  assert.equal(viewHeight(0, 800, true), 800 - 16);         // full screen
+  assert.equal(viewHeight(100, 200), 160);                  // tiny window: minimum height
 });

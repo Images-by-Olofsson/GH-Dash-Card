@@ -7,7 +7,7 @@
  *
  * Card type: custom:gh-dash-card
  */
-const VERSION = '0.15.0';
+const VERSION = '0.15.1';
 
 // ---------------------------------------------------------------- helpers --
 
@@ -39,7 +39,7 @@ const MP_NEXT = 32;
 const MP_PLAY = 16384;
 export const ZOOM_MIN = 0.5;
 export const ZOOM_MAX = 3;
-export const ZOOM_STEP = 0.25;
+export const ZOOM_STEP = 0.1;
 
 const round1 = (v) => Math.round(v * 10) / 10;
 const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
@@ -112,7 +112,9 @@ export const WHEEL_NOTCH = 90;
  */
 export function wheelSteps(rest, deltaY, deltaMode = 0) {
   const unit = deltaMode === 1 ? 33 : deltaMode === 2 ? 400 : 1; // lines / pages -> pixels
-  const acc = num(rest, 0) + num(deltaY, 0) * unit;
+  const d = num(deltaY, 0) * unit;
+  const r = num(rest, 0);
+  const acc = (r * d < 0 ? 0 : r) + d; // turning the wheel the other way starts from zero
   const n = Math.trunc(acc / WHEEL_NOTCH);
   return { steps: clamp(-n, -2, 2) || 0, rest: acc - n * WHEEL_NOTCH };
 }
@@ -158,9 +160,9 @@ export function pinchZoom(startZoom, startDist, dist) {
   return clampZoom(num(startZoom, 1) * (dist / startDist));
 }
 
-/** Zoom factor limited to 0.5..3 in 0.25 steps. */
+/** Zoom factor limited to 0.5..3 in 0.1 steps (rounded to 2 decimals, so 0.7 stays 0.7). */
 export function clampZoom(z) {
-  return clamp(Math.round(num(z, 1) / ZOOM_STEP) * ZOOM_STEP, ZOOM_MIN, ZOOM_MAX);
+  return clamp(Math.round(Math.round(num(z, 1) / ZOOM_STEP) * ZOOM_STEP * 100) / 100, ZOOM_MIN, ZOOM_MAX);
 }
 
 /** A new 8x3 % box centred on a drop point; null when dropped outside the plan. */
@@ -181,6 +183,15 @@ export function resolveTheme(configTheme, stored, haDark) {
 }
 
 /** Zoom at which the whole plan height fits in availHeight (0.1..1, 2 decimals). */
+/**
+ * Height the plan may use on screen: from the plan's top (at most half-way down) to the bottom of
+ * the window, minus room below it (56 px, 16 px in full screen); never less than 160 px.
+ */
+export function viewHeight(top, windowHeight, full = false) {
+  const h = num(windowHeight, 0);
+  return Math.max(160, Math.round(h - Math.min(Math.max(0, num(top, 0)), h / 2) - (full ? 16 : 56)));
+}
+
 export function fitZoom(availHeight, width, aspect) {
   if (!(width > 0) || !(aspect > 0) || !(availHeight > 0)) return 1;
   return Math.round(clamp(availHeight / (width * aspect), 0.1, 1) * 100) / 100;
@@ -960,8 +971,8 @@ const CARD_CSS = `
   .btn.circ .txt { display: none; }
   .btn.circ.alert { background: var(--error-color, #e53935); color: #fff; border-color: var(--error-color, #e53935); }
   ha-card.dark { background: #11151b; color: #e6e9ef; }
-  .vp { position: relative; overflow: auto; overscroll-behavior: contain; scrollbar-width: thin; touch-action: pan-x pan-y; }
-  .vp.pannable { cursor: grab; }
+  .vp { position: relative; overflow: auto; scrollbar-width: thin; touch-action: pan-x pan-y; }
+  .vp.pannable { cursor: grab; touch-action: none; overscroll-behavior: contain; } /* the card pans the plan itself (any direction, one finger) */
   .vp.panning { cursor: grabbing; }
   .plan { position: relative; container-type: inline-size; line-height: 0; user-select: none; -webkit-user-select: none;
           margin: 0 auto; width: calc(var(--zoom, 1) * 100%); }
@@ -1500,11 +1511,10 @@ class GhDashCard extends Base {
   _fitViewport() {
     if (!this._vp) return;
     const w = this._vp.clientWidth;
+    // The space between the plan's top and the bottom of the screen (phone, tablet, desktop, full screen).
+    const avail = viewHeight(this._vp.getBoundingClientRect().top, window.innerHeight, document.fullscreenElement === this._card);
     if (this._fit && this._aspect && w && this._plan) {
       // Scale so the whole plan height fits between the card's top and the bottom of the window.
-      const top = Math.max(0, this._vp.getBoundingClientRect().top);
-      const full = document.fullscreenElement === this._card;
-      const avail = window.innerHeight - Math.min(top, window.innerHeight / 2) - (full ? 16 : 56);
       const z = fitZoom(avail, w, this._aspect);
       this._zoom = z;
       this._plan.style.setProperty('--zoom', String(z));
@@ -1514,8 +1524,9 @@ class GhDashCard extends Base {
       this._fitBtn.classList.toggle('active', !!this._fit);
       this._fitBtn.setAttribute('aria-pressed', String(!!this._fit));
     }
-    // At zoom > 1 the viewport keeps the 100 % height and the plan scrolls/pans inside it.
-    this._vp.style.maxHeight = !this._fit && this._zoom > 1 && this._aspect && w ? `${Math.round(w * this._aspect)}px` : '';
+    // The view never gets taller than the screen: a tall plan (phone) or a zoomed-in plan is moved
+    // around inside it (drag, swipe, pinch) instead of making the whole page scroll.
+    this._vp.style.maxHeight = w ? `${avail}px` : '';
     const scrollable = this._vp.scrollWidth > this._vp.clientWidth + 1 || this._vp.scrollHeight > this._vp.clientHeight + 1;
     this._vp.classList.toggle('pannable', scrollable);
     this._fitLabels();
@@ -1691,40 +1702,70 @@ class GhDashCard extends Base {
     };
     vp.addEventListener('touchend', endPinch);
     vp.addEventListener('touchcancel', endPinch);
-    // Mouse: drag to pan when the plan is larger than the view. Touch scrolls natively.
+    // Mouse and one finger: drag to pan when the plan is larger than the view, freely in any
+    // direction (the browser's own touch scrolling locks to one axis). A flick glides on a little.
+    // When the whole plan fits, touch is left to the browser so the page scrolls as usual.
     vp.addEventListener('pointerdown', (ev) => {
-      if (ev.pointerType !== 'mouse' || ev.button !== 0 || !vp.classList.contains('pannable')) return;
+      if (this._glide) { cancelAnimationFrame(this._glide); this._glide = 0; }
+      if (ev.pointerType === 'mouse' && ev.button !== 0) return;
+      if (this._panSession) { this._panSession.dead = true; return; } // a second finger: the pinch takes over
+      if (!vp.classList.contains('pannable')) return;
+      const touch = ev.pointerType !== 'mouse';
+      const sess = { dead: false };
+      this._panSession = sess;
       const sx = ev.clientX;
       const sy = ev.clientY;
       const sl = vp.scrollLeft;
       const st = vp.scrollTop;
       let panning = false;
+      let last = { x: sx, y: sy, t: performance.now() };
+      let vel = { x: 0, y: 0 };
       const move = (e) => {
+        if (e.pointerId !== ev.pointerId) return;
+        if (this._pinch) sess.dead = true;
+        if (sess.dead) return;
         const dx = e.clientX - sx;
         const dy = e.clientY - sy;
         if (!panning && Math.hypot(dx, dy) < PAN_THRESHOLD) return;
         if (!panning) {
           panning = true;
-          vp.setPointerCapture(ev.pointerId);
+          try { vp.setPointerCapture(ev.pointerId); } catch (err) { /* pointer already gone */ }
           vp.classList.add('panning');
           this._cancelLongPress?.();
         }
         vp.scrollLeft = sl - dx;
         vp.scrollTop = st - dy;
+        const now = performance.now();
+        const dt = Math.max(1, now - last.t);
+        vel = { x: (e.clientX - last.x) / dt, y: (e.clientY - last.y) / dt };
+        last = { x: e.clientX, y: e.clientY, t: now };
       };
-      const up = () => {
-        vp.removeEventListener('pointermove', move);
-        vp.removeEventListener('pointerup', up);
-        vp.removeEventListener('pointercancel', up);
+      const up = (e) => {
+        if (e.pointerId !== ev.pointerId) return;
+        window.removeEventListener('pointermove', move);
+        window.removeEventListener('pointerup', up);
+        window.removeEventListener('pointercancel', up);
         vp.classList.remove('panning');
+        if (this._panSession === sess) this._panSession = null;
         if (panning) {
           this._suppressClick = true;
           setTimeout(() => { this._suppressClick = false; }, 0);
         }
+        // glide after a flick (touch only, and only if the finger was still moving at the end)
+        if (touch && panning && !sess.dead && performance.now() - last.t < 80 && Math.hypot(vel.x, vel.y) > 0.3) {
+          let v = { x: vel.x * 16, y: vel.y * 16 };
+          const step = () => {
+            vp.scrollLeft -= v.x;
+            vp.scrollTop -= v.y;
+            v = { x: v.x * 0.92, y: v.y * 0.92 };
+            this._glide = Math.hypot(v.x, v.y) > 0.5 ? requestAnimationFrame(step) : 0;
+          };
+          this._glide = requestAnimationFrame(step);
+        }
       };
-      vp.addEventListener('pointermove', move);
-      vp.addEventListener('pointerup', up);
-      vp.addEventListener('pointercancel', up);
+      window.addEventListener('pointermove', move);
+      window.addEventListener('pointerup', up);
+      window.addEventListener('pointercancel', up);
     });
   }
 
@@ -2925,12 +2966,12 @@ class GhDashCardEditor extends Base {
       bar.appendChild(b);
       return b;
     };
-    btn('minus', L('zoom_out'), () => this._setZoom(this._ez / 1.25), 'act icon');
+    btn('minus', L('zoom_out'), () => this._setZoom(this._ez / 1.1), 'act icon');
     this._pct = document.createElement('span');
     this._pct.className = 'pct';
     this._pct.textContent = `${Math.round(this._ez * 100)}%`;
     bar.appendChild(this._pct);
-    btn('plus', L('zoom_in'), () => this._setZoom(this._ez * 1.25), 'act icon');
+    btn('plus', L('zoom_in'), () => this._setZoom(this._ez * 1.1), 'act icon');
     btn('fit', L('fit'), () => { this._ez = 1; this._layout(); this._wrap.scrollLeft = 0; this._wrap.scrollTop = 0; }, 'act icon');
     const sp = document.createElement('span');
     sp.className = 'sp';
@@ -3028,7 +3069,7 @@ class GhDashCardEditor extends Base {
     // mouse wheel = zoom around the pointer
     wrap.addEventListener('wheel', (ev) => {
       ev.preventDefault();
-      this._setZoom(this._ez * (ev.deltaY < 0 ? 1.15 : 1 / 1.15), ev.clientX, ev.clientY);
+      this._setZoom(this._ez * (ev.deltaY < 0 ? 1.1 : 1 / 1.1), ev.clientX, ev.clientY);
     }, { passive: false });
     // drag on an empty spot = move the plan; a click on an empty spot = deselect
     wrap.addEventListener('pointerdown', (ev) => {
